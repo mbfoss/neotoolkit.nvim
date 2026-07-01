@@ -1,4 +1,4 @@
-local uitool = require "neotoolkit.uitool"
+local uiutil = require "neotoolkit.ui"
 ---@class neotoolkit.floatwin
 ---@field _complete_cache? string[]
 ---@field _complete_buf? integer
@@ -48,7 +48,7 @@ function M.open(text, opts)
     vim.bo[buf].bufhidden = "wipe"
 
     local win, win_augroup
-    win, win_augroup = uitool.create_window(buf, true, win_opts, function()
+    win, win_augroup = uiutil.create_window(buf, true, win_opts, function()
         win, win_augroup = nil, nil
     end)
     local function close()

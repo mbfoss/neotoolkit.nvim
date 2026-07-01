@@ -1,4 +1,4 @@
-local ui_util = require("easydap.util.ui_util")
+local ui_util = require("neotoolkit.ui")
 local M = {}
 
 ---@class neotoolkit.inputwin.Opts

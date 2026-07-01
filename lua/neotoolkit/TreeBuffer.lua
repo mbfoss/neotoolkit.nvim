@@ -1,5 +1,5 @@
 local Tree = require("neotoolkit.Tree")
-local uitool = require("neotoolkit.uitool")
+local uiutil = require("neotoolkit.ui")
 local Signal = require("neotoolkit.Signal")
 
 ---@class neotoolkit.TreeBuffer.Item
@@ -138,7 +138,7 @@ function TreeBuffer:create_buffer(on_deleted)
         return self._bufnr, false
     end
 
-    self._bufnr = uitool.create_scratch_buffer(false, {
+    self._bufnr = uiutil.create_scratch_buffer(false, {
         buftype      = "nofile",
         filetype     = self._filetype or "neotoolkit-tree",
         modifiable   = false,
