@@ -30,8 +30,6 @@ local Signal = require("neotoolkit.Signal")
 ---@field indent_string string?
 ---@field collapsible boolean?  -- whether nodes can be expanded/collapsed (default true)
 
-local _ns_id = vim.api.nvim_create_namespace('neotoolkitTreeBuffer')
-
 ---@class neotoolkit.TreeBuffer
 ---@field private _filetype string?
 ---@field private _formatter neotoolkit.TreeBuffer.FormatterFn
@@ -44,6 +42,7 @@ local _ns_id = vim.api.nvim_create_namespace('neotoolkitTreeBuffer')
 ---@field private _on_selection neotoolkit.Signal<fun(id:any,data:any)>
 ---@field private _on_toggle neotoolkit.Signal<fun(id:any,data:any,expanded:boolean)>
 ---@field private _bufnr integer
+---@field private _ns_id integer
 ---@field private _tree neotoolkit.Tree
 ---@field private _flat_ids any[]
 ---@field private _id_to_idx table<any, integer>
@@ -72,6 +71,7 @@ function TreeBuffer.new(opts)
         _on_selection   = Signal.new(), ---@type neotoolkit.Signal<fun(id:any,data:any)>
         _on_toggle      = Signal.new(), ---@type neotoolkit.Signal<fun(id:any,data:any,expanded:boolean)>
         _bufnr          = -1,
+        _ns_id          = -1,
         _tree           = Tree.new(),
         _flat_ids       = {}, ---@type any[]
         _id_to_idx      = {}, ---@type table<any, integer>
@@ -148,6 +148,7 @@ function TreeBuffer:create_buffer(on_deleted)
         self._bufnr = -1
         on_deleted()
     end)
+    self._ns_id = vim.api.nvim_create_namespace("TreeBuffer_" .. self._bufnr)
 
     self:_full_render()
 
@@ -271,7 +272,7 @@ function TreeBuffer:_full_render()
         for _, e in ipairs(exts) do extmarks[#extmarks + 1] = e end
     end
 
-    vim.api.nvim_buf_clear_namespace(buf, _ns_id, 0, -1)
+    vim.api.nvim_buf_clear_namespace(buf, self._ns_id, 0, -1)
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
@@ -298,7 +299,7 @@ function TreeBuffer:_render_range(start_idx, old_size, new_flat)
         for _, e in ipairs(exts) do extmarks[#extmarks + 1] = e end
     end
 
-    vim.api.nvim_buf_clear_namespace(buf, _ns_id, start_row, start_row + old_size)
+    vim.api.nvim_buf_clear_namespace(buf, self._ns_id, start_row, start_row + old_size)
 
     local end_row = start_row + old_size
     if old_size == 0 and #self._flat_ids == 0 then end_row = -1 end
@@ -372,12 +373,12 @@ end
 ---@param extmarks table
 function TreeBuffer:_apply_metadata(buf, hl_calls, extmarks)
     for _, h in ipairs(hl_calls) do
-        vim.api.nvim_buf_set_extmark(buf, _ns_id, h.row, h.s_col, {
+        vim.api.nvim_buf_set_extmark(buf, self._ns_id, h.row, h.s_col, {
             end_col = h.e_col, hl_group = h.hl,
         })
     end
     for _, d in ipairs(extmarks) do
-        vim.api.nvim_buf_set_extmark(buf, _ns_id, d[1], d[2], d[3])
+        vim.api.nvim_buf_set_extmark(buf, self._ns_id, d[1], d[2], d[3])
     end
 end
 
