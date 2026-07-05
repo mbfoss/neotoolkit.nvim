@@ -2,9 +2,9 @@
 require("plenary.busted")
 
 local usercmd = require("neotoolkit.usercmd")
-local split = usercmd._split_args
+local split = usercmd.split_args
 
-describe("usercmd._split_args", function()
+describe("usercmd.split_args", function()
     describe("plain splitting", function()
         it("returns an empty table for an empty string", function()
             assert.same({}, split(""))
