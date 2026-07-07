@@ -1,6 +1,6 @@
 local M = {}
 
-local ui = require("neotoolkit.util.ui_util")
+local ui = require("neotoolkit.ui")
 
 ---@class neotoolkit.TermHandle
 ---@field bufnr number
