@@ -9,7 +9,7 @@ local M = {}
 -- user opens a new split) so the window recovers its intended size.
 
 ---@class neotoolkit.fixedwin.AxisSpec
----@field split string                    ex command that creates the split
+---@field split string                    :split subcommand, combined with a placement modifier
 ---@field fix   string                    window option that pins the axis
 ---@field frame "col"|"row"               parent frame kind that makes re-pinning safe
 ---@field total fun(): integer            total lines/columns available
@@ -19,7 +19,7 @@ local M = {}
 ---@type table<string, neotoolkit.fixedwin.AxisSpec>
 local _AXES = {
     height = {
-        split = "botright split",
+        split = "split",
         fix   = "winfixheight",
         frame = "col",
         total = function() return vim.o.lines end,
@@ -27,7 +27,7 @@ local _AXES = {
         set   = vim.api.nvim_win_set_height,
     },
     width = {
-        split = "botright vsplit",
+        split = "vsplit",
         fix   = "winfixwidth",
         frame = "row",
         total = function() return vim.o.columns end,
@@ -65,6 +65,7 @@ end
 ---@class neotoolkit.fixedwin.Opts
 ---@field min?   integer  minimum size (lines/columns); default 1
 ---@field enter? boolean  leave the cursor in the new window; default false (returns to the previous window)
+---@field pos?   string   placement modifier for the split (e.g. "topleft", "botright", "leftabove"); default "botright"
 
 --- Create a fixed-size split that recovers its size across layout changes.
 ---
@@ -85,9 +86,10 @@ function M.create_fixed_win(axis, ratio, on_delete, opts)
     local spec = assert(_AXES[axis], "fixedwin: unknown axis " .. tostring(axis))
     opts = opts or {}
     local min = opts.min or 1
+    local pos = opts.pos or "botright"
 
     local prev_win = vim.api.nvim_get_current_win()
-    vim.cmd(spec.split)
+    vim.cmd(pos .. " " .. spec.split)
     local win = vim.api.nvim_get_current_win() ---@type integer?
     assert(win)
 
@@ -157,6 +159,13 @@ function M.create_fixed_win(axis, ratio, on_delete, opts)
 
     -- re-apply the size when new splits appear so the window stays pinned
     vim.api.nvim_create_autocmd("WinNew", {
+        group    = group,
+        callback = absorb_layout_change,
+    })
+
+    -- the editor resize changes total lines/columns, so re-pin to keep the ratio
+    -- (treated like a layout change; `settling` guards the transient resizes)
+    vim.api.nvim_create_autocmd("VimResized", {
         group    = group,
         callback = absorb_layout_change,
     })
