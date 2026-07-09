@@ -14,7 +14,6 @@ local ui = require("neotoolkit.ui")
 ---@field on_stderr?      fun(id: integer, data: string[], name: string)
 ---@field on_exit?        fun(code: integer)
 ---@field line_buffered?  boolean  only emit complete lines to on_stdout/on_stderr
----@field no_auto_wipe_on_exit boolean?
 
 ---Neovim splits on newlines but the last element of each on_stdout/on_stderr
 ---call is always a partial fragment joined to the first element of the next call.
@@ -140,17 +139,15 @@ function M.spawn(cmd, opts, bufnr)
         vim.bo[bufnr].buflisted = true
     end
 
-    if opts.no_auto_wipe_on_exit then
-        vim.api.nvim_create_autocmd("TermClose", {
-            buffer   = bufnr,
-            once     = true,
-            callback = function()
-                for _, key in ipairs({ 'i', 'a', 'o', 'I', 'A', 'O', 'c', 'cc', 'C', 's', 'S', 'R', '.' }) do
-                    vim.keymap.set("n", key, "<Nop>", { buffer = bufnr, nowait = true })
-                end
-            end,
-        })
-    end
+    vim.api.nvim_create_autocmd("TermClose", {
+        buffer   = bufnr,
+        once     = true,
+        callback = function()
+            for _, key in ipairs({ 'i', 'a', 'o', 'I', 'A', 'O', 'c', 'cc', 'C', 's', 'S', 'R', '.' }) do
+                vim.keymap.set("n", key, "<Nop>", { buffer = bufnr, nowait = true })
+            end
+        end,
+    })
 
     return { ---@type neotoolkit.TermHandle
         bufnr = bufnr,
