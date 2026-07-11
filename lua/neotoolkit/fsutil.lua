@@ -16,6 +16,66 @@ function M.dir_exists(path)
     return stat and stat.type == "directory" or false
 end
 
+-- Platform-specific check for a filesystem "hidden" attribute (distinct from
+-- the dot convention). Resolved once at load time so `is_hidden` stays cheap.
+local _hidden_by_attr ---@type fun(path:string):boolean
+---@return fun(path:string):boolean
+local function _hidden_by_attr_fn()
+    if _hidden_by_attr then return _hidden_by_attr end
+    if vim.fn.has("win32") == 1 then
+        -- libuv can't report FILE_ATTRIBUTE_HIDDEN on Windows (it always zeroes
+        -- stat.flags), so read it straight from the Win32 API via LuaJIT FFI --
+        -- in-process, no subprocess. Guarded so any FFI failure falls back below.
+        local ffi = require("ffi")
+        ffi.cdef("uint32_t GetFileAttributesW(const uint16_t* lpFileName);")
+        local kernel32 = ffi.load("kernel32")
+        local INVALID_FILE_ATTRIBUTES = 0xFFFFFFFF
+        local FILE_ATTRIBUTE_HIDDEN = 0x2
+        _hidden_by_attr = function(path)
+            -- GetFileAttributesW takes a NUL-terminated UTF-16LE (wide) string.
+            local wide = vim.iconv(path, "utf-8", "utf-16le")
+            if not wide then return false end
+            wide = wide .. "\0\0"
+            local buf = ffi.new("uint8_t[?]", #wide)
+            ffi.copy(buf, wide, #wide)
+            local attrs = kernel32.GetFileAttributesW(ffi.cast("const uint16_t*", buf))
+            return attrs ~= INVALID_FILE_ATTRIBUTES
+                and bit.band(attrs, FILE_ATTRIBUTE_HIDDEN) ~= 0
+        end
+    end
+    if not _hidden_by_attr then
+        -- _UF_HIDDEN (0x8000): the native BSD "hidden" file flag. libuv surfaces it in
+        -- `stat.flags` on macOS/BSD, but hardcodes `stat.flags = 0` on Windows and it
+        -- is unused on Linux (which only has the dot convention).
+        local UF_HIDDEN = 0x8000
+        -- macOS/BSD expose _UF_HIDDEN through libuv's stat.flags; on Linux this is
+        -- simply always false. lstat, so the entry's own flags are read rather
+        -- than a symlink target's.
+        _hidden_by_attr = function(path)
+            local stat = vim.uv.fs_lstat(path)
+            return stat ~= nil and stat.flags ~= nil and bit.band(stat.flags, UF_HIDDEN) ~= 0
+        end
+    end
+    return _hidden_by_attr
+end
+
+--- Whether a file or directory is hidden.
+--- WARNING: the Windos hidden file detection has not been tested
+--- A path counts as hidden when its final component begins with a dot (the
+--- Unix convention, honoured on every platform) or when the filesystem marks
+--- it hidden via a native attribute (FILE_ATTRIBUTE_HIDDEN on Windows,
+--- _UF_HIDDEN on macOS/BSD).
+---@param path string
+---@return boolean
+function M.is_hidden(path)
+    local name = vim.fs.normalize(path):gsub("[/\\]+$", ""):match("[^/\\]*$")
+    if name ~= "" and name ~= "." and name ~= ".." and name:sub(1, 1) == "." then
+        return true
+    end
+
+    return _hidden_by_attr_fn()(path)
+end
+
 ---@param path string
 ---@return boolean
 ---@return string|nil
