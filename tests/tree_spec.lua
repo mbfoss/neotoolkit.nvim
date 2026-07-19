@@ -24,9 +24,7 @@ local function walk_ids(tree)
 end
 
 describe("neotoolkit.Tree", function()
-    -- ──────────────────────────────────────────────────────────────────────────
     -- construction / basics
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("new", function()
         it("starts empty", function()
             local t = Tree.new()
@@ -36,9 +34,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- add_item
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("add_item", function()
         it("adds root items in insertion order", function()
             local t = Tree.new()
@@ -82,9 +78,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- add_sibling
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("add_sibling", function()
         it("inserts after a root reference", function()
             local t = Tree.new()
@@ -153,9 +147,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- set_item_data
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("set_item_data", function()
         it("updates data and returns true", function()
             local t = Tree.new()
@@ -170,9 +162,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- queries
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("queries", function()
         local function sample()
             local t = Tree.new()
@@ -269,9 +259,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- iterators
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("iterators", function()
         it("iter_roots yields id,data in order", function()
             local t = Tree.new()
@@ -298,9 +286,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- walk_tree / walk_node
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("walk", function()
         local function sample()
             local t = Tree.new()
@@ -350,9 +336,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- remove_item / remove_children
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("removal", function()
         it("remove_item drops the node and its subtree", function()
             local t = Tree.new()
@@ -417,9 +401,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- set_children
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("set_children", function()
         it("populates root children", function()
             local t = Tree.new()
@@ -464,9 +446,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- update_children
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("update_children", function()
         it("keeps surviving children and their subtrees, removes the rest", function()
             local t = Tree.new()
@@ -537,9 +517,7 @@ describe("neotoolkit.Tree", function()
         end)
     end)
 
-    -- ──────────────────────────────────────────────────────────────────────────
     -- integration / invariants
-    -- ──────────────────────────────────────────────────────────────────────────
     describe("invariants", function()
         it("stays consistent through a mix of operations", function()
             local t = Tree.new()
