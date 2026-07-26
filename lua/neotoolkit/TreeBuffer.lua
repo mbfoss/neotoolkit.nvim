@@ -19,7 +19,7 @@ local Signal = require("neotoolkit.Signal")
 ---@field expandable boolean?
 ---@field expanded boolean?
 
----@alias neotoolkit.TreeBuffer.FormatterFn fun(id:any, data:any, expanded:boolean):string[][], string[][], string?
+---@alias neotoolkit.TreeBuffer.FormatterFn fun(id:any, data:any, expanded:boolean, prefix_width:integer):string[][], string[][], string?
 
 ---@class neotoolkit.TreeBuffer.Opts
 ---@field filetype string?
@@ -228,7 +228,8 @@ function TreeBuffer:_render_node(flatnode, row)
         prefix = indent
     end
 
-    local text_chunks, virt, line_hl = self._formatter(id, data.userdata, data.expanded)
+    local text_chunks, virt, line_hl = self._formatter(id, data.userdata, data.expanded,
+        vim.fn.strdisplaywidth(prefix))
     local line = prefix
     local col = #prefix
     local hl_calls = {}
@@ -641,6 +642,12 @@ function TreeBuffer:refresh_item(id)
     if not data then return false end
     self:_render_line(id, data)
     return true
+end
+
+---Re-render every visible line, e.g. after something the formatter reads
+---(such as the window width) changed outside the tree itself.
+function TreeBuffer:redraw()
+    self:_full_render()
 end
 
 function TreeBuffer:toggle_expand(id)
