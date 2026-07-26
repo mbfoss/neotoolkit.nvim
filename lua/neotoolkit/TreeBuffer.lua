@@ -516,6 +516,37 @@ function TreeBuffer:remove_children(id)
     self:set_children(id, {})
 end
 
+---Reconcile `children` into `parent_id` in place: surviving ids keep their node
+---— and so their expansion state — with data and expandability refreshed, new
+---ids are added, and ids no longer listed are removed.
+---@param parent_id any
+---@param children neotoolkit.TreeBuffer.ItemDef[]
+function TreeBuffer:merge_children(parent_id, children)
+    local existing = self:get_children(parent_id)
+    local existing_ids = {}
+    for _, child in ipairs(existing) do
+        existing_ids[child.id] = true
+    end
+
+    local new_ids = {}
+    for _, item in ipairs(children) do
+        new_ids[item.id] = true
+        if existing_ids[item.id] then
+            self:set_item_data(item.id, item.data)
+            self:set_item_expandable(item.id, item.expandable or false)
+        else
+            self:add_item(parent_id, item)
+        end
+    end
+
+    for _, child in ipairs(existing) do
+        if not new_ids[child.id] then
+            self:remove_item(child.id)
+        end
+    end
+end
+
+
 ---@param parent_id any  -- nil for root
 ---@param item neotoolkit.TreeBuffer.ItemDef
 ---@return boolean
