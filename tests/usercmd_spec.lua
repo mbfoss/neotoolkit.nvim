@@ -2,106 +2,86 @@
 require("plenary.busted")
 
 local usercmd = require("neotoolkit.usercmd")
-local split = usercmd.split_args
 
-describe("usercmd.split_args", function()
-    describe("plain splitting", function()
-        it("returns an empty table for an empty string", function()
-            assert.same({}, split(""))
-        end)
+--- Register a command, run `line`, and return the args its run_fn received.
+---@param line string
+---@return string[]
+local function run(line)
+    local got
+    usercmd.register_user_cmd("NtkSpec", function(_, args) got = args end)
+    vim.cmd(line)
+    pcall(vim.api.nvim_del_user_command, "NtkSpec")
+    return got
+end
 
-        it("returns an empty table for whitespace only", function()
-            assert.same({}, split("   "))
-        end)
+--- Register a command with a subcommand handler and return what completion
+--- passed it: the cmd name, the preceding args, and the arg being completed.
+---@param cmd_line string
+---@return table
+local function complete(cmd_line)
+    local seen
+    usercmd.register_user_cmd("NtkSpec", function() end, {
+        subcommand = function(cmd, rest, lead)
+            seen = { cmd = cmd, rest = rest, lead = lead }
+            return {}
+        end,
+    })
+    vim.fn.getcompletion(cmd_line, "cmdline")
+    pcall(vim.api.nvim_del_user_command, "NtkSpec")
+    return seen or {}
+end
 
-        it("splits on single spaces", function()
-            assert.same({ "a", "b", "c" }, split("a b c"))
-        end)
-
-        it("collapses runs of whitespace", function()
-            assert.same({ "a", "b" }, split("a    b"))
-        end)
-
-        it("splits on tabs and mixed whitespace", function()
-            assert.same({ "a", "b", "c" }, split("a\tb \t c"))
-        end)
-
-        it("ignores leading and trailing whitespace", function()
-            assert.same({ "a", "b" }, split("  a b  "))
-        end)
+describe("usercmd argument splitting", function()
+    it("splits on unescaped whitespace", function()
+        assert.same({ "a", "b", "c" }, run("NtkSpec a b c"))
+        assert.same({ "a", "b" }, run("NtkSpec   a    b  "))
+        assert.same({}, run("NtkSpec"))
     end)
 
-    describe("escaped whitespace", function()
-        it("joins an argument across an escaped space", function()
-            assert.same({ "a b" }, split([[a\ b]]))
-            assert.same({ "a b c" }, split([[a\ b\ c]]))
-        end)
-
-        it("joins an argument across an escaped tab", function()
-            assert.same({ "a\tb" }, split("a\\\tb"))
-        end)
-
-        it("keeps escaped whitespace at the edges of an argument", function()
-            assert.same({ " a" }, split([[\ a]]))
-            assert.same({ "a " }, split([[a\ ]]))
-            assert.same({ " " }, split([[\ ]]))
-        end)
-
-        it("mixes escaped and unescaped whitespace", function()
-            assert.same({ "one two", "three" }, split([[one\ two three]]))
-            assert.same({ "cmd", "my file.txt", "-v" }, split([[cmd my\ file.txt -v]]))
-        end)
-
-        it("escapes a space inside a flag value", function()
-            assert.same({ "--p=x y" }, split([[--p=x\ y]]))
-        end)
+    it("joins an argument across escaped whitespace", function()
+        assert.same({ "a b" }, run([[NtkSpec a\ b]]))
+        assert.same({ "my file.txt", "-v" }, run([[NtkSpec my\ file.txt -v]]))
+        assert.same({ "--p=x y" }, run([[NtkSpec --p=x\ y]]))
+        assert.same({ "a\tb" }, run("NtkSpec a\\\tb"))
     end)
 
-    describe("escaped backslashes", function()
-        it("collapses a doubled backslash to one", function()
-            assert.same({ "a\\b" }, split([[a\\b]]))
-            assert.same({ "\\" }, split([[\\]]))
-            assert.same({ "a\\\\b" }, split([[a\\\\b]]))
-        end)
-
-        it("does not let an escaped backslash escape the next space", function()
-            assert.same({ "a\\", "b" }, split([[a\\ b]]))
-            assert.same({ "a\\ b" }, split([[a\\\ b]]))
-        end)
-
-        it("keeps a trailing backslash literally", function()
-            assert.same({ "a\\" }, split([[a\]]))
-            assert.same({ "\\" }, split([[\]]))
-        end)
+    it("collapses a doubled backslash to one", function()
+        assert.same({ "a\\b" }, run([[NtkSpec a\\b]]))
+        assert.same({ "a\\", "b" }, run([[NtkSpec a\\ b]]))
+        assert.same({ "a\\ b" }, run([[NtkSpec a\\\ b]]))
     end)
 
-    describe("backslash before an ordinary character", function()
-        it("keeps both the backslash and the character", function()
-            assert.same({ "a\\nb" }, split([[a\nb]]))
-            assert.same({ "\\d+" }, split([[\d+]]))
-            assert.same({ "a\\b" }, split([[a\b]]))
-        end)
+    it("keeps a backslash before an ordinary character", function()
+        assert.same({ "a\\nb" }, run([[NtkSpec a\nb]]))
+        assert.same({ "\\d+" }, run([[NtkSpec \d+]]))
+        assert.same({ "a\\" }, run([[NtkSpec a\]]))
     end)
 
-    describe("quotes are not special", function()
-        it("treats a double quote as an ordinary character", function()
-            assert.same({ '"a', 'b"' }, split('"a b"'))
-            assert.same({ '"a"' }, split('"a"'))
-            assert.same({ '""' }, split('""'))
-            assert.same({ 'a"b"c' }, split('a"b"c'))
-        end)
+    it("treats quotes as ordinary characters", function()
+        assert.same({ '"a', 'b"' }, run('NtkSpec "a b"'))
+        assert.same({ 'a"b"c' }, run('NtkSpec a"b"c'))
+        assert.same({ "it's" }, run("NtkSpec it's"))
+    end)
+end)
 
-        it("treats a single quote as an ordinary character", function()
-            assert.same({ "'a", "b'" }, split("'a b'"))
-            assert.same({ "it's" }, split("it's"))
-        end)
+describe("usercmd completion", function()
+    it("passes the command name and no context for the first argument", function()
+        assert.same({ cmd = "NtkSpec", rest = {}, lead = "" }, complete("NtkSpec "))
+        assert.same({ cmd = "NtkSpec", rest = {}, lead = "su" }, complete("NtkSpec su"))
+    end)
 
-        it("does not strip a quote escaped with a backslash", function()
-            assert.same({ '\\"a' }, split([[\"a]]))
-        end)
+    it("passes completed arguments as context, excluding the one in progress", function()
+        assert.same({ "a" }, complete("NtkSpec a ").rest)
+        assert.same({ "a" }, complete("NtkSpec a b").rest)
+        assert.same({ "a", "b" }, complete("NtkSpec a b ").rest)
+    end)
 
-        it("needs a backslash, not quotes, to keep a phrase together", function()
-            assert.same({ "say", "hello world" }, split([[say hello\ world]]))
-        end)
+    it("applies escaping rules to the context arguments", function()
+        assert.same({ "a b" }, complete([[NtkSpec a\ b ]]).rest)
+    end)
+
+    it("strips a range and command modifiers", function()
+        assert.same({ cmd = "NtkSpec", rest = { "a" }, lead = "" }, complete("vert NtkSpec a "))
+        assert.same({ cmd = "NtkSpec", rest = { "a" }, lead = "" }, complete("silent! NtkSpec a "))
     end)
 end)
