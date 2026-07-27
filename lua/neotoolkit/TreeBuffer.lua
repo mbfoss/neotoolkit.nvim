@@ -547,7 +547,6 @@ function TreeBuffer:merge_children(parent_id, children)
     end
 end
 
-
 ---@param parent_id any  -- nil for root
 ---@param item neotoolkit.TreeBuffer.ItemDef
 ---@return boolean
