@@ -8,7 +8,9 @@ local usercmd = require("neotoolkit.usercmd")
 ---@return string[]
 local function run(line)
     local got
-    usercmd.register_user_cmd("NtkSpec", function(_, args) got = args end)
+    vim.api.nvim_create_user_command("NtkSpec", function(opts)
+        usercmd.handle(opts, function(_, args) got = args end)
+    end, { nargs = "*" })
     vim.cmd(line)
     pcall(vim.api.nvim_del_user_command, "NtkSpec")
     return got
@@ -20,10 +22,13 @@ end
 ---@return table
 local function complete(cmd_line)
     local seen
-    usercmd.register_user_cmd("NtkSpec", function() end, {
-        subcommand = function(cmd, rest, lead)
-            seen = { cmd = cmd, rest = rest, lead = lead }
-            return {}
+    vim.api.nvim_create_user_command("NtkSpec", function() end, {
+        nargs = "*",
+        complete = function(arg_lead, line, _)
+            return usercmd.complete(arg_lead, line, function(cmd, rest, lead)
+                seen = { cmd = cmd, rest = rest, lead = lead }
+                return {}
+            end)
         end,
     })
     vim.fn.getcompletion(cmd_line, "cmdline")
