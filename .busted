@@ -1,0 +1,13 @@
+return {
+    _all = {
+        -- Run the specs inside Neovim, so `vim.api` & friends are available.
+        lua = "nlua",
+    },
+    default = {
+        ROOT = { "tests" },
+        pattern = "_spec%.lua$",
+        helper = "tests/init.lua",
+        lpath = "lua/?.lua;lua/?/init.lua",
+        output = "utfTerminal",
+    },
+}

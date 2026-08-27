@@ -1,6 +1,4 @@
 ---@diagnostic disable: undefined-global, undefined-field
-require("plenary.busted")
-
 local usercmd = require("neotoolkit.usercmd")
 
 --- Register a command, run `line`, and return the args its run_fn received.

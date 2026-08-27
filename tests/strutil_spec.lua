@@ -1,6 +1,4 @@
 ---@diagnostic disable: undefined-global, undefined-field
-require("plenary.busted")
-
 local strutil = require("neotoolkit.strutil")
 
 --- Display cells the string occupies on screen.

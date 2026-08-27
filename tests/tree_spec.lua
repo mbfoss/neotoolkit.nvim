@@ -1,6 +1,4 @@
 ---@diagnostic disable: undefined-global, undefined-field
-require("plenary.busted")
-
 local Tree = require("neotoolkit.Tree")
 
 -- Collect (id, depth) pairs in walk order.
