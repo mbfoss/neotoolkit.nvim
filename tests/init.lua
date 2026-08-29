@@ -1,6 +1,23 @@
 -- Busted helper: loaded once, inside Neovim, before any spec runs.
+--
+-- `make test` drives busted through nlua, so the specs get a real Neovim (and
+-- with it the `vim` API) rather than a bare Lua interpreter.
 
--- nlua starts Neovim with `-u NONE`, so the plugin is not on the runtimepath.
--- Specs `require` it through `lpath` (see .busted); put it on the rtp as well
--- so anything reaching for plugin/, ftplugin/ or friends finds it too.
-vim.opt.runtimepath:prepend(vim.uv.cwd())
+-- Absolute paths throughout: a spec that `chdir`s into a temporary directory
+-- would otherwise stop resolving a relative runtimepath or `package.path`.
+local root = vim.uv.cwd()
+
+vim.opt.runtimepath:prepend(root)
+package.path = table.concat({
+    root .. "/lua/?.lua",
+    root .. "/lua/?/init.lua",
+    package.path,
+}, ";")
+
+-- nlua starts Neovim with `-u NONE`, which also means "no plugin scripts and
+-- no filetype detection". Put back the parts of an ordinary session the specs
+-- assume: this plugin's own commands and autocmds, and `:filetype on`.
+vim.cmd("filetype plugin indent on")
+for _, file in ipairs(vim.fn.glob(root .. "/plugin/**/*.{lua,vim}", false, true)) do
+    vim.cmd.source(file)
+end

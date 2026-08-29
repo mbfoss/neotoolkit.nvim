@@ -7,7 +7,6 @@ return {
         ROOT = { "tests" },
         pattern = "_spec%.lua$",
         helper = "tests/init.lua",
-        lpath = "lua/?.lua;lua/?/init.lua",
         output = "utfTerminal",
     },
 }
