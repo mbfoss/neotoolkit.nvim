@@ -48,6 +48,16 @@ local function stranded_count(bufnr)
     return #vim.api.nvim_buf_get_extmarks(bufnr, ns, { line_count, 0 }, { -1, -1 }, {})
 end
 
+--- Every extmark this group holds in `bufnr`, read straight from Neovim rather
+--- than through the module, which reports marks by file and so cannot see one
+--- left behind in a buffer that no longer answers to that file.
+---@param bufnr integer
+---@return integer
+local function buf_mark_count(bufnr)
+    local ns = vim.api.nvim_get_namespaces()["ntkspec.marks"]
+    return #vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, {})
+end
+
 local group
 
 before_each(function()
@@ -241,6 +251,67 @@ describe("fileextmarks bookkeeping", function()
 
         vim.api.nvim_buf_set_name(buf, file)
         assert.equals("live", group.get_file_extmarks(file, true)[1].source)
+    end)
+
+    it("ignores a buffer whose name merely contains the file", function()
+        local dir = tmpdir()
+        -- `bufnr()` settles for a partial match when nothing matches exactly, which
+        -- would hand this buffer back for a file that has none of its own.
+        vim.fn.writefile({ "x", "y" }, dir .. "/file.txt.bak")
+        local bak = open(dir .. "/file.txt.bak")
+
+        local file = dir .. "/file.txt"
+        vim.fn.writefile({ "a", "b" }, file)
+        group.set_file_extmark(1, file, 1, 0, {}, nil)
+
+        assert.equals(0, buf_mark_count(bak))
+        assert.equals("stored", group.get_file_extmarks(file, true)[1].source)
+    end)
+
+    it("does not clear an unrelated buffer that partially matches", function()
+        local dir = tmpdir()
+        vim.fn.writefile({ "x", "y" }, dir .. "/file.txt.bak")
+        vim.fn.writefile({ "a", "b" }, dir .. "/file.txt")
+        local bak = open(dir .. "/file.txt.bak")
+        group.set_file_extmark(1, dir .. "/file.txt.bak", 1, 0, {}, nil)
+        group.set_file_extmark(2, dir .. "/file.txt", 1, 0, {}, nil)
+        assert.equals(1, buf_mark_count(bak))
+
+        -- Removing a file that no buffer holds must not take the namespace of the
+        -- buffer that merely spells like it down with it.
+        group.remove_file_extmarks(dir .. "/file.txt")
+
+        assert.equals(1, buf_mark_count(bak))
+    end)
+
+    it("clears marks a buffer is renamed away from", function()
+        local file = tmpfile({ "a", "b" })
+        local buf = open(file)
+        group.set_file_extmark(1, file, 1, 0, {}, nil)
+        assert.equals(1, buf_mark_count(buf))
+
+        -- No BufReadPost fires for a rename, and every later lookup for `file`
+        -- misses this buffer, so nothing else could ever collect these.
+        vim.api.nvim_buf_set_name(buf, vim.fn.fnamemodify(file, ":h") .. "/renamed.txt")
+
+        assert.equals(0, buf_mark_count(buf))
+        assert.equals("stored", group.get_file_extmarks(file, true)[1].source)
+    end)
+
+    it("applies the new name's marks on rename", function()
+        local dir = tmpdir()
+        local from, to = dir .. "/from.txt", dir .. "/to.txt"
+        vim.fn.writefile({ "a", "b" }, from)
+        vim.fn.writefile({ "a", "b" }, to)
+
+        local buf = open(from)
+        group.set_file_extmark(1, to, 2, 0, {}, nil)
+        assert.equals(0, buf_mark_count(buf))
+
+        vim.api.nvim_buf_set_name(buf, to)
+
+        assert.equals(1, buf_mark_count(buf))
+        assert.equals("live", group.get_file_extmarks(to, true)[1].source)
     end)
 
     it("tracks one file however its path is spelled", function()

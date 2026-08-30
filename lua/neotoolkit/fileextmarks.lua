@@ -63,9 +63,27 @@ end
 ---@type table<string, neotoolkit.fileextmarks.BufCacheEntry>
 local _bufnr_cache = {}
 
---- `vim.fn.bufnr()` walks the whole buffer list matching names as patterns, once
---- per file per lookup. Re-validating the cached answer against the name it was
---- cached under costs three C calls and heals wipes, unloads and renames itself.
+--- Walks the buffer list comparing normalized names. `vim.fn.bufnr()` cannot do
+--- this job: it matches its argument as a pattern and, failing that, settles for a
+--- partial match, so a file with no buffer of its own resolves to any buffer whose
+--- name merely contains it -- and marks would then be written, cleared and repaired
+--- there. Normalizing both sides also lands a buffer opened by another spelling.
+---@param file string        -- must already be normalized
+---@return integer
+local function _lookup_loaded_bufnr(file)
+    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_loaded(bufnr) then
+            local name = vim.api.nvim_buf_get_name(bufnr)
+            if name ~= "" and _normalize_file(name) == file then return bufnr end
+        end
+    end
+
+    return -1
+end
+
+--- The scan above is a `resolve()` per loaded buffer, so it is cached. Re-validating
+--- the cached answer against the name it was cached under costs three C calls and
+--- heals wipes, unloads and renames itself.
 ---@param file string        -- must already be normalized
 ---@return integer
 local function _get_loaded_bufnr(file)
@@ -80,8 +98,8 @@ local function _get_loaded_bufnr(file)
         _bufnr_cache[file] = nil
     end
 
-    local bufnr = vim.fn.bufnr(file, false)
-    if bufnr == -1 or not vim.api.nvim_buf_is_loaded(bufnr) then return -1 end
+    local bufnr = _lookup_loaded_bufnr(file)
+    if bufnr == -1 then return -1 end
 
     _bufnr_cache[file] = { bufnr = bufnr, name = vim.api.nvim_buf_get_name(bufnr) }
     return bufnr
@@ -307,18 +325,20 @@ end
 
 --- Replaces the namespace with this group's stored marks for `bufnr`'s file. The
 --- clear collects extmarks orphaned while the buffer was unloaded (deletes skip an
---- unloaded buffer, marks survive one), so it runs before the `file_data` check.
+--- unloaded buffer, marks survive one) or renamed off the file that owns them, so
+--- it runs unconditionally -- before the name check too, since a buffer renamed to
+--- nothing still holds whatever the old name put there.
 ---@param bufnr integer
 ---@param group string
 local function _apply_buffer_extmarks(bufnr, group)
     local group_data = _defined_groups[group]
     assert(group_data)
 
+    _clear_buf_namespace(bufnr, group_data.ns)
+
     local file = vim.api.nvim_buf_get_name(bufnr)
     if file == "" then return end
     file = _normalize_file(file)
-
-    _clear_buf_namespace(bufnr, group_data.ns)
 
     local file_data = group_data.byfile[file]
     if not file_data then return end
@@ -355,6 +375,23 @@ local function _register_autocmds()
     vim.api.nvim_create_autocmd("BufReadPost", {
         group = augroup,
         callback = function(ev)
+            for group in pairs(_defined_groups) do
+                _apply_buffer_extmarks(ev.buf, group)
+            end
+        end,
+    })
+    -- A rename leaves the buffer holding the old name's marks while every lookup
+    -- for that file now misses it, so they would stay rendered and unreachable --
+    -- `remove_extmarks()` and `refresh()` both go through the file, not the buffer.
+    -- Re-applying clears the namespace and puts back whatever the new name owns.
+    vim.api.nvim_create_autocmd("BufFilePost", {
+        group = augroup,
+        callback = function(ev)
+            -- Dropped rather than repointed: `_apply_buffer_extmarks` re-attaches
+            -- under the new file if it has marks, and leaving the old entry has
+            -- `_on_lines` repairing this buffer against a file it no longer holds.
+            _attached[ev.buf] = nil
+
             for group in pairs(_defined_groups) do
                 _apply_buffer_extmarks(ev.buf, group)
             end
