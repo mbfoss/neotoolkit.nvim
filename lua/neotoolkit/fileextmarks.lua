@@ -29,11 +29,9 @@ local M = {}
 local _defined_groups = {}
 local _autocmds_registered = false
 
--- Neovim keeps extmark namespaces and autocmd groups in a single, process-wide
--- registry keyed by name, while the state above is per module instance. If this
--- file is vendored into several plugins, two copies asking for the same group
--- name would silently share a namespace and clear each other's autocmds, so the
--- owning plugin must claim a prefix via M.init() before anything else.
+-- Namespaces and autocmd groups live in one process-wide registry keyed by name,
+-- while the state above is per module instance, so two vendored copies of this
+-- file would silently share them. The owning plugin claims a prefix via M.init().
 ---@type string?
 local _prefix = nil
 
@@ -48,17 +46,9 @@ local function _prefixed(name)
     return ("%s.%s"):format(_require_prefix(), name)
 end
 
---- Marks are keyed by resolved absolute path, so every spelling of a file --
---- relative, or reached through a symlinked component -- lands on the one key.
----
---- Neovim does not name buffers this way. It resolves symlinked *directory*
---- components, but a final-component file symlink stays under the name it was
---- opened with, so `nvim_buf_get_name()` is normalized through here as well.
---- `vim.fn.bufnr()` still finds such a buffer from the resolved path because it
---- matches by inode rather than by name.
----
---- `resolve()` rather than `vim.uv.fs_realpath()`: a mark may be stored for a
---- file that does not exist yet, and realpath returns nil for those.
+--- Lands every spelling of a file -- relative, or through a symlinked component
+--- -- on one key. Buffer names go through it too: Neovim leaves a final-component
+--- symlink unresolved. `resolve()`, since a mark may name a file that is not there.
 ---@param file string
 ---@return string
 local function _normalize_file(file)
@@ -73,14 +63,9 @@ end
 ---@type table<string, neotoolkit.fileextmarks.BufCacheEntry>
 local _bufnr_cache = {}
 
---- `vim.fn.bufnr()` is the most expensive call on the read path: it walks the
---- whole buffer list matching names as patterns, and it runs once per file on
---- every lookup. Cache the answer and re-validate it with three cheap C calls
---- instead.
----
---- Validation compares the buffer's name to the name it had when it was cached, so
---- a wipe, an unload or a rename all fall through to a fresh lookup and the cache
---- heals itself with no invalidation autocmds.
+--- `vim.fn.bufnr()` walks the whole buffer list matching names as patterns, once
+--- per file per lookup. Re-validating the cached answer against the name it was
+--- cached under costs three C calls and heals wipes, unloads and renames itself.
 ---@param file string        -- must already be normalized
 ---@return integer
 local function _get_loaded_bufnr(file)
@@ -102,21 +87,15 @@ local function _get_loaded_bufnr(file)
     return bufnr
 end
 
---- Buffers holding marks, each mapped to the normalized file they hold them for.
---- `_on_lines` needs that file on every change and cannot afford to re-derive it
---- from the buffer's name, and the absence of an entry is what tells the callback
---- to detach.
+--- Buffers holding marks, mapped to the normalized file they hold them for:
+--- `_on_lines` needs it on every change and cannot afford to re-derive it from the
+--- buffer's name, and a missing entry is what tells the callback to detach.
 ---@type table<integer, string>
 local _attached = {}
 
---- Buffers with a live `on_lines` subscription.
----
---- Deliberately not folded into `_attached`. A subscription outlives its entry
---- there: `_forget_bufnr` drops the entry to *schedule* a detach, but the
---- callback can only release itself, so it stays live until the next change. One
---- table doing both jobs makes that window look unsubscribed, and a mark re-added
---- inside it stacks a second subscription on the buffer -- every one of which
---- then runs the repair on every edit, for the life of the session.
+--- Buffers with a live `on_lines` subscription. Kept out of `_attached`: dropping
+--- an entry there only *schedules* a detach, and one table doing both jobs would
+--- read as unsubscribed in that window and stack a second subscription.
 ---@type table<integer, true>
 local _subscribed = {}
 
@@ -131,24 +110,17 @@ local function _forget_bufnr(file)
 
     _bufnr_cache[file] = nil
 
-    -- Schedule the `on_lines` release too, or a buffer keeps paying a query per
-    -- group on every edit that reaches its end long after its last mark went
-    -- away. `_subscribed` is left alone: the subscription is still live until the
-    -- callback next runs and drops it. `_attached` is scanned rather than read
-    -- through `_bufnr_cache`, which may never have been populated for this file:
-    -- a buffer opened with marks already stored attaches from the autocmd's
-    -- bufnr, without a lookup.
+    -- Schedule the `on_lines` release too, or the buffer keeps paying a query per
+    -- group on every edit reaching its end. `_attached` is scanned because
+    -- `_bufnr_cache` may never have held this file; `_subscribed` is left alone.
     for bufnr, attached_file in pairs(_attached) do
         if attached_file == file then _attached[bufnr] = nil end
     end
 end
 
---- Call after removing a single mark: drops `file` from the group if that was
---- its last one, then releases the cache.
----
---- Without this an emptied file lingers as a bare table that every later
---- `_get_extmarks` still walks -- and still pays a buffer lookup for -- and its
---- cache entries outlive the marks that justified them.
+--- Call after removing a single mark: drops `file` from the group if that was its
+--- last one, then releases the cache. Otherwise an emptied file lingers as a bare
+--- table that every later `_get_extmarks` walks and pays a buffer lookup for.
 ---@param group_data neotoolkit.fileextmarks.GroupData
 ---@param file string
 local function _release_file(group_data, file)
@@ -183,13 +155,9 @@ local function _place_extmark(bufnr, mark, lnum, col)
         col = 0
     end
 
-    -- Clamp the range end inside the buffer. Neovim measures `end_col` against
-    -- the length of the `end_row` line (and, when `end_row` is absent, against
-    -- the start row's line), so a range whose text has since been deleted makes
-    -- `nvim_buf_set_extmark` throw. `mark.opts` is deliberately left alone: the
-    -- mark keeps the range its caller gave it, so an undo that puts the text back
-    -- puts the whole range back with it. A range that already fits -- the
-    -- overwhelmingly common case -- allocates nothing.
+    -- Clamp the range end inside the buffer: `end_col` is measured against its
+    -- line, so a range whose text was deleted would throw. `mark.opts` is left
+    -- alone, so an undo restores the whole range; a range that fits allocates nothing.
     local opts = mark.opts
     local end_row, end_col = opts.end_row, opts.end_col
 
@@ -232,9 +200,8 @@ end
 ---@field col number        -- 0-based
 
 --- Reports where this group's marks currently sit in `bufnr`. Pure: `_on_lines`
---- keeps the buffer in a state where every row is real, so nothing needs fixing
---- here. The clamp is defence in depth for a buffer we failed to attach to -- we
---- would rather report the last line than a line that does not exist.
+--- keeps every row real. The clamp is defence in depth for a buffer we failed to
+--- attach to -- better the last line than a line that does not exist.
 ---@param bufnr integer
 ---@param file_table neotoolkit.fileextmarks.ById
 ---@param ns integer
@@ -253,35 +220,17 @@ local function _read_live_marks(bufnr, file_table, ns)
     return result
 end
 
---- Re-anchors marks stranded past the end of `bufnr` onto its last line.
----
---- Deleting a range of lines that runs to the end of the buffer leaves the marks
---- it contained on row `line_count` -- one past the last real line. Neovim never
---- drops them: they keep drifting with later edits, one row past the end forever.
---- But nothing renders on a row that does not exist and a ranged query for the
---- last line never returns them, so from the outside the mark simply vanishes.
----
---- Only that tail can hold a stranded mark, so the query is bounded by it rather
---- than walking the namespace: the cost is proportional to the number of marks
---- actually stranded, which is normally none.
----
---- Marks are matched against `byfile[file]`, the marks this group holds for the
---- file this buffer is attached under, rather than by id through `id_to_file`.
---- An id resolves to exactly one file, but a buffer can hold an extmark for a
---- file it is no longer the buffer of: moving a mark to another file skips the
---- buffer-side delete while the old buffer is unloaded, and extmarks survive an
---- unload, so the orphan is still there when the buffer is read back. Matching
---- by id would look that orphan up, find the mark under its *new* file, and
---- re-anchor a foreign mark here on every edit. Going through `byfile` also
---- skips the query outright for a group holding nothing for this file.
----
---- `file` comes from `_attached` rather than from the buffer's name so that this
---- costs no `_normalize_file` -- a readlink per path component -- on an edit.
+--- Re-anchors marks stranded past the end of `bufnr` onto its last line: a delete
+--- running to the last line leaves them one row past it forever, where nothing
+--- renders and no ranged query finds them. Bounded to that tail, so usually free.
 ---@param bufnr integer
----@param file string        -- normalized; the file `bufnr` was attached under
+---@param file string        -- normalized; from `_attached`, so an edit re-normalizes nothing
 ---@param line_count integer      -- the buffer's line count after the change
 local function _repair_stranded_marks(bufnr, file, line_count)
     for _, group_data in pairs(_defined_groups) do
+        -- Matched through `byfile`, not by id: a buffer can hold an extmark for a
+        -- file it is no longer the buffer of, and by id that orphan would resolve
+        -- to its *new* file and be re-anchored here on every edit.
         local file_table = group_data.byfile[file]
         if file_table then
             local stranded = vim.api.nvim_buf_get_extmarks(
@@ -303,39 +252,27 @@ local function _repair_stranded_marks(bufnr, file, line_count)
     end
 end
 
---- Fires for every change to an attached buffer, including changes made through
---- the API, which is why this replaced a TextChanged autocmd: `nvim_buf_set_lines`
---- fires no TextChanged, so a plugin editing the buffer stranded marks silently.
----
---- Only a change that runs to the end of the buffer can strand a mark, and that
---- is decided from the change range alone: every edit that stops short of the
---- last line is rejected in O(1) without the extmark tree being touched at all.
----
---- Note this is not just about deletions. A replacement that grows the buffer
---- strands marks too, because a right-gravity mark at the end of the replaced
---- range lands on `last_new` -- which is exactly `line_count` when the range ran
---- to the end. Testing "did anything get removed" first therefore misses real
---- strandings, so the reach test stands alone.
----
---- Errors are swallowed on purpose. One raised here propagates out of the change
---- that triggered it: `nvim_buf_set_lines` returns the error to its caller and
---- the buffer then rejects every later edit, so a throwing repair costs far more
---- than the mark it failed to move.
----
---- A missing `_attached` entry means the last mark for this buffer's file is
---- gone. Returning true is the whole detach path: a Lua `on_lines` callback can
---- only be released from inside itself, so `_forget_bufnr` drops the entry and
---- the next change tears the subscription down.
+--- Fires for every change to an attached buffer, including API ones -- which is
+--- why this replaced a TextChanged autocmd: `nvim_buf_set_lines` fires no
+--- TextChanged, so a plugin editing the buffer stranded marks silently.
 local function _on_lines(_, bufnr, _, _, _, last_new)
+    -- No entry means the last mark for this buffer's file is gone. Returning true
+    -- is the whole detach path: an `on_lines` callback can only release itself, so
+    -- `_forget_bufnr` drops the entry and the next change tears the subscription down.
     local file = _attached[bufnr]
     if not file then
         _subscribed[bufnr] = nil
         return true -- detach
     end
 
+    -- Only a change reaching the end can strand a mark -- growing the buffer does
+    -- it too, since a right-gravity mark lands on `last_new`. Decided from the
+    -- range alone, so a shorter edit costs O(1) and never touches the extmark tree.
     local line_count = vim.api.nvim_buf_line_count(bufnr)
     if last_new < line_count then return end -- change stopped short of the end
 
+    -- Swallowed on purpose: an error raised here propagates out of the change that
+    -- triggered it, and the buffer then rejects every later edit.
     pcall(_repair_stranded_marks, bufnr, file, line_count)
 end
 
@@ -368,6 +305,9 @@ local function _clear_buf_namespace(bufnr, ns)
     vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
 end
 
+--- Replaces the namespace with this group's stored marks for `bufnr`'s file. The
+--- clear collects extmarks orphaned while the buffer was unloaded (deletes skip an
+--- unloaded buffer, marks survive one), so it runs before the `file_data` check.
 ---@param bufnr integer
 ---@param group string
 local function _apply_buffer_extmarks(bufnr, group)
@@ -377,6 +317,8 @@ local function _apply_buffer_extmarks(bufnr, group)
     local file = vim.api.nvim_buf_get_name(bufnr)
     if file == "" then return end
     file = _normalize_file(file)
+
+    _clear_buf_namespace(bufnr, group_data.ns)
 
     local file_data = group_data.byfile[file]
     if not file_data then return end
@@ -581,10 +523,9 @@ local function _get_extmark_by_location(file, line, group_data, live)
         local line_count = vim.api.nvim_buf_line_count(bufnr)
         if line > line_count then return nil end
 
-        -- Bounded to the line asked for rather than walking the namespace. The
-        -- last line has to reach past the end too: a mark stranded there reads
-        -- as sitting on it (see `_read_live_marks`), which `_on_lines` normally
-        -- repairs but a buffer we failed to attach to can still be holding.
+        -- Bounded to the line asked for rather than walking the namespace. The last
+        -- line reaches past the end too: a mark stranded there reads as sitting on
+        -- it, and a buffer we failed to attach to can still be holding one.
         local last = line == line_count and { -1, -1 } or { line - 1, -1 }
         local found = vim.api.nvim_buf_get_extmarks(
             bufnr,
@@ -720,8 +661,7 @@ local function _refresh_group(group_data, group)
     for file in pairs(group_data.byfile) do
         local bufnr = _get_loaded_bufnr(file)
         if bufnr >= 0 then
-            _clear_buf_namespace(bufnr, group_data.ns)
-            _apply_buffer_extmarks(bufnr, group)
+            _apply_buffer_extmarks(bufnr, group)     -- clears the namespace itself
         end
     end
 end

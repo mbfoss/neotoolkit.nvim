@@ -313,10 +313,11 @@ describe("fileextmarks buffer subscriptions", function()
         assert.equals(0, queries_while_appending(buf))
     end)
 
-    it("does not re-anchor a mark that belongs to another file", function()
+    it("collects an extmark orphaned in an unloaded buffer", function()
         -- Extmarks survive an unload, and moving a mark away skips the
-        -- buffer-side delete while the old buffer is unloaded. The orphan left
-        -- behind must not be matched back to the mark under its new file.
+        -- buffer-side delete while the old buffer is unloaded. Reading the
+        -- buffer back has to collect the orphan left behind: nothing records
+        -- it, so it would otherwise render for the rest of the session.
         local one, two = tmpfile({ "a1", "a2", "a3" }), tmpfile({ "b1", "b2" })
         local buf = open(one)
         group.set_file_extmark(1, one, 3, 0, { hl_group = "Error" }, nil)
@@ -335,9 +336,8 @@ describe("fileextmarks buffer subscriptions", function()
             if m[1] == 1 then orphan = m[4] end
         end
 
-        -- Left exactly as the buffer had it: re-anchoring would have rewritten
-        -- it with the second file's opts, which carry no highlight.
-        assert.equals("Error", orphan.hl_group)
+        -- Gone from the buffer, and never re-anchored on the way out.
+        assert.is_nil(orphan)
         assert.equals(vim.fn.fnamemodify(two, ":p"), group.get_extmark_by_id(1).file)
     end)
 end)
