@@ -283,10 +283,23 @@ local function _on_lines(_, bufnr, _, _, _, last_new)
         return true -- detach
     end
 
+    -- Guarded like the repair below, and for a second reason: an error escaping this
+    -- callback has Neovim drop the subscription on the spot without calling
+    -- `on_detach`, and the `_subscribed` entry left behind would bar `_attach_buffer`
+    -- from ever replacing it -- the buffer would go unrepaired for the rest of its
+    -- life. Nothing else in here can raise, so the flag stays authoritative.
+    local ok, line_count = pcall(vim.api.nvim_buf_line_count, bufnr)
+    if not ok then
+        -- State unknown, so hold nothing: detaching costs one re-attach, and the
+        -- next `_apply_buffer_extmarks` or `set_file_extmark` does it.
+        _attached[bufnr] = nil
+        _subscribed[bufnr] = nil
+        return true -- detach
+    end
+
     -- Only a change reaching the end can strand a mark -- growing the buffer does
     -- it too, since a right-gravity mark lands on `last_new`. Decided from the
     -- range alone, so a shorter edit costs O(1) and never touches the extmark tree.
-    local line_count = vim.api.nvim_buf_line_count(bufnr)
     if last_new < line_count then return end -- change stopped short of the end
 
     -- Swallowed on purpose: an error raised here propagates out of the change that
