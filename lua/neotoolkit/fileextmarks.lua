@@ -210,11 +210,13 @@ end
 
 ---@param bufnr integer
 ---@param mark neotoolkit.fileextmarks.MarkData
-local function _set_extmark(bufnr, mark)
+---@param store boolean      -- record where the mark landed, clamp included
+local function _set_extmark(bufnr, mark, store)
     -- No empty-buffer guard: a loaded buffer always holds at least one line.
     if not vim.api.nvim_buf_is_loaded(bufnr) then return end
 
-    mark.lnum, mark.col = _place_extmark(bufnr, mark, mark.lnum, mark.col)
+    local lnum, col = _place_extmark(bufnr, mark, mark.lnum, mark.col)
+    if store then mark.lnum, mark.col = lnum, col end
 end
 
 ---@class neotoolkit.fileextmarks.LivePos
@@ -349,6 +351,16 @@ local function _clear_buf_namespace(bufnr, ns)
     vim.api.nvim_buf_clear_namespace(bufnr, ns, 0, -1)
 end
 
+--- Whether `bufnr`'s text can be read as the file's own. The stored position
+--- describes what is on disk, so this gates every write from a buffer back into
+--- the cache: an unsaved edit, and a buffer with no file behind it, are not it.
+---@param bufnr integer
+---@param file string        -- normalized
+---@return boolean
+local function _buf_matches_file(bufnr, file)
+    return not vim.bo[bufnr].modified and vim.fn.filereadable(file) == 1
+end
+
 --- Replaces the namespace with this group's stored marks for `bufnr`'s file. The
 --- clear collects marks orphaned by an unload (deletes skip an unloaded buffer) or
 --- a rename, so it runs unconditionally -- before the name check, which may miss.
@@ -367,8 +379,13 @@ local function _apply_buffer_extmarks(bufnr, group)
     local file_data = group_data.byfile[file]
     if not file_data then return end
 
+    -- The clamp is evidence about the file only when the buffer holds what the
+    -- file holds: a `BufNewFile` buffer is empty for want of a file, not for want
+    -- of lines, and recording that would flatten every stored line to 1.
+    local store = _buf_matches_file(bufnr, file)
+
     for _, mark in pairs(file_data) do
-        _set_extmark(bufnr, mark)
+        _set_extmark(bufnr, mark, store)
     end
 
     _attach_buffer(bufnr, file)
@@ -379,6 +396,10 @@ local function _sync_file_extmarks(bufnr)
     local file = vim.api.nvim_buf_get_name(bufnr)
     if file == "" then return end
     file = _normalize_file(file)
+
+    -- Both callers reach here with the buffer about to be written or dropped, and
+    -- neither is a reason to record positions the file does not have.
+    if not _buf_matches_file(bufnr, file) then return end
 
     for _, group_data in pairs(_defined_groups) do
         local file_table = group_data.byfile[file]
@@ -433,15 +454,12 @@ local function _register_autocmds()
         group = augroup,
         callback = function(ev) _sync_file_extmarks(ev.buf) end,
     })
-    -- Only when the text still matches the file: the stored position describes what
-    -- is on disk, and an unsaved delete would otherwise move every mark below it
-    -- for good. A save already synced through `BufWritePost`; `:e!` is a discard.
+    -- Gated inside `_sync_file_extmarks`: an unsaved delete would otherwise move
+    -- every mark below it for good, with nothing on disk to justify it. A save
+    -- synced through `BufWritePost` already; `:e!` is a discard, and stays one.
     vim.api.nvim_create_autocmd("BufUnload", {
         group = augroup,
-        callback = function(ev)
-            if vim.bo[ev.buf].modified then return end
-            _sync_file_extmarks(ev.buf)
-        end,
+        callback = function(ev) _sync_file_extmarks(ev.buf) end,
     })
 end
 
@@ -494,7 +512,9 @@ local function _set_file_extmark(id, file, lnum, col, group_data, opts, user_dat
     group_data.byfile[file][id] = mark
 
     if bufnr >= 0 then
-        _set_extmark(bufnr, mark)
+        -- Stored: the caller is placing the mark now, so where it actually landed
+        -- is the truth about it, short buffer or not.
+        _set_extmark(bufnr, mark, true)
         _attach_buffer(bufnr, file)
     end
 end
