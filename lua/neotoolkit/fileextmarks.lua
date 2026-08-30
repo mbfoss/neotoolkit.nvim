@@ -63,11 +63,9 @@ end
 ---@type table<string, neotoolkit.fileextmarks.BufCacheEntry>
 local _bufnr_cache = {}
 
---- Walks the buffer list comparing normalized names. `vim.fn.bufnr()` cannot do
---- this job: it matches its argument as a pattern and, failing that, settles for a
---- partial match, so a file with no buffer of its own resolves to any buffer whose
---- name merely contains it -- and marks would then be written, cleared and repaired
---- there. Normalizing both sides also lands a buffer opened by another spelling.
+--- Walks the buffer list comparing normalized names, which also lands a buffer
+--- opened by another spelling. `vim.fn.bufnr()` cannot do this job: it falls back
+--- to a partial match, so an untracked file resolves to any name containing it.
 ---@param file string        -- must already be normalized
 ---@return integer
 local function _lookup_loaded_bufnr(file)
@@ -182,10 +180,9 @@ local function _place_extmark(bufnr, mark, lnum, col)
     if end_row or end_col then
         local clamped_row = math.min(end_row or row, line_count - 1)
 
-        -- The end may not precede the start. Neovim stores an inverted range in
-        -- silence rather than rejecting it, so nothing downstream would report a
-        -- range that got here stale or hand-written; the mark would simply stop
-        -- rendering. Costs a comparison on a path that already clamps.
+        -- The end may not precede the start: Neovim stores an inverted range in
+        -- silence rather than rejecting it, and the mark just stops rendering.
+        -- Costs a comparison on a path that already clamps.
         clamped_row = math.max(clamped_row, row)
 
         local clamped_col = end_col
@@ -301,11 +298,9 @@ local function _on_lines(_, bufnr, _, _, _, last_new)
         return true -- detach
     end
 
-    -- Guarded like the repair below, and for a second reason: an error escaping this
-    -- callback has Neovim drop the subscription on the spot without calling
-    -- `on_detach`, and the `_subscribed` entry left behind would bar `_attach_buffer`
-    -- from ever replacing it -- the buffer would go unrepaired for the rest of its
-    -- life. Nothing else in here can raise, so the flag stays authoritative.
+    -- Guarded for a second reason: an error escaping here has Neovim drop the
+    -- subscription without calling `on_detach`, and the stale `_subscribed` entry
+    -- would bar `_attach_buffer` from ever replacing it. Nothing else can raise.
     local ok, line_count = pcall(vim.api.nvim_buf_line_count, bufnr)
     if not ok then
         -- State unknown, so hold nothing: detaching costs one re-attach, and the
@@ -355,10 +350,8 @@ local function _clear_buf_namespace(bufnr, ns)
 end
 
 --- Replaces the namespace with this group's stored marks for `bufnr`'s file. The
---- clear collects extmarks orphaned while the buffer was unloaded (deletes skip an
---- unloaded buffer, marks survive one) or renamed off the file that owns them, so
---- it runs unconditionally -- before the name check too, since a buffer renamed to
---- nothing still holds whatever the old name put there.
+--- clear collects marks orphaned by an unload (deletes skip an unloaded buffer) or
+--- a rename, so it runs unconditionally -- before the name check, which may miss.
 ---@param bufnr integer
 ---@param group string
 local function _apply_buffer_extmarks(bufnr, group)
@@ -394,12 +387,9 @@ local function _sync_file_extmarks(bufnr)
                 local mark = file_table[live.id]
                 mark.lnum, mark.col = live.lnum, live.col
 
-                -- The end drifts with the text exactly as the start does, but it
-                -- lives in `opts` rather than in the cached position, so syncing
-                -- only the start would leave every re-place pairing a current
-                -- start with a creation-time end -- a range that shrinks, grows or
-                -- inverts on reload. Unconditional: a point mark reports nil ends,
-                -- which is what it already has.
+                -- The end drifts like the start but lives in `opts`, so syncing
+                -- only the start would re-place a current start against a
+                -- creation-time end. Unconditional: a point mark reports nil.
                 mark.opts.end_row = live.end_row
                 mark.opts.end_col = live.end_col
             end
@@ -423,10 +413,9 @@ local function _register_autocmds()
             end
         end,
     })
-    -- A rename leaves the buffer holding the old name's marks while every lookup
-    -- for that file now misses it, so they would stay rendered and unreachable --
-    -- `remove_extmarks()` and `refresh()` both go through the file, not the buffer.
-    -- Re-applying clears the namespace and puts back whatever the new name owns.
+    -- A rename leaves the buffer holding the old name's marks, rendered but
+    -- unreachable: every lookup goes through the file, not the buffer. Re-applying
+    -- clears the namespace and puts back whatever the new name owns.
     vim.api.nvim_create_autocmd("BufFilePost", {
         group = augroup,
         callback = function(ev)
@@ -444,13 +433,9 @@ local function _register_autocmds()
         group = augroup,
         callback = function(ev) _sync_file_extmarks(ev.buf) end,
     })
-    -- Only for a buffer whose text still matches the file. The stored position
-    -- describes the file on disk, and an unloading buffer is the one moment where
-    -- edits that never reached disk would otherwise be written into it: leaving a
-    -- delete unsaved would move every mark below it and keep it moved, with no
-    -- change on disk to justify it. A save syncs through `BufWritePost` already,
-    -- so nothing is lost by skipping the modified case -- and `:e!`, which fires
-    -- this before re-reading, is a discard whose positions must survive intact.
+    -- Only when the text still matches the file: the stored position describes what
+    -- is on disk, and an unsaved delete would otherwise move every mark below it
+    -- for good. A save already synced through `BufWritePost`; `:e!` is a discard.
     vim.api.nvim_create_autocmd("BufUnload", {
         group = augroup,
         callback = function(ev)
