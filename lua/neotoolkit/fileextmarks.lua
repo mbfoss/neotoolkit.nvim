@@ -102,12 +102,23 @@ local function _get_loaded_bufnr(file)
     return bufnr
 end
 
---- Buffers this module has an `on_lines` subscription on, each mapped to the
---- normalized file it holds marks for. `_on_lines` needs that file on every
---- change and cannot afford to re-derive it from the buffer's name, and the
---- absence of an entry is what tells the callback to detach.
+--- Buffers holding marks, each mapped to the normalized file they hold them for.
+--- `_on_lines` needs that file on every change and cannot afford to re-derive it
+--- from the buffer's name, and the absence of an entry is what tells the callback
+--- to detach.
 ---@type table<integer, string>
 local _attached = {}
+
+--- Buffers with a live `on_lines` subscription.
+---
+--- Deliberately not folded into `_attached`. A subscription outlives its entry
+--- there: `_forget_bufnr` drops the entry to *schedule* a detach, but the
+--- callback can only release itself, so it stays live until the next change. One
+--- table doing both jobs makes that window look unsubscribed, and a mark re-added
+--- inside it stacks a second subscription on the buffer -- every one of which
+--- then runs the repair on every edit, for the life of the session.
+---@type table<integer, true>
+local _subscribed = {}
 
 --- Forgets the cached buffer lookup for `file`, unless some group still tracks
 --- it. Call after dropping a file from a group; the cache is shared across
@@ -120,11 +131,13 @@ local function _forget_bufnr(file)
 
     _bufnr_cache[file] = nil
 
-    -- Release the `on_lines` subscription too, or a buffer keeps paying a query
-    -- per group on every edit that reaches its end long after its last mark went
-    -- away. `_attached` is scanned rather than read through `_bufnr_cache`,
-    -- which may never have been populated for this file: a buffer opened with
-    -- marks already stored attaches from the autocmd's bufnr, without a lookup.
+    -- Schedule the `on_lines` release too, or a buffer keeps paying a query per
+    -- group on every edit that reaches its end long after its last mark went
+    -- away. `_subscribed` is left alone: the subscription is still live until the
+    -- callback next runs and drops it. `_attached` is scanned rather than read
+    -- through `_bufnr_cache`, which may never have been populated for this file:
+    -- a buffer opened with marks already stored attaches from the autocmd's
+    -- bufnr, without a lookup.
     for bufnr, attached_file in pairs(_attached) do
         if attached_file == file then _attached[bufnr] = nil end
     end
@@ -315,10 +328,13 @@ end
 --- the next change tears the subscription down.
 local function _on_lines(_, bufnr, _, _, _, last_new)
     local file = _attached[bufnr]
-    if not file then return true end                    -- detach
+    if not file then
+        _subscribed[bufnr] = nil
+        return true -- detach
+    end
 
     local line_count = vim.api.nvim_buf_line_count(bufnr)
-    if last_new < line_count then return end            -- change stopped short of the end
+    if last_new < line_count then return end -- change stopped short of the end
 
     pcall(_repair_stranded_marks, bufnr, file, line_count)
 end
@@ -326,17 +342,24 @@ end
 ---@param bufnr integer
 ---@param file string        -- normalized; the file `bufnr` holds marks for
 local function _attach_buffer(bufnr, file)
-    if _attached[bufnr] then
-        _attached[bufnr] = file        -- re-attached under a new name
-        return
-    end
+    _attached[bufnr] = file        -- may be a re-attach under a new name
 
-    _attached[bufnr] = file
+    -- A subscription scheduled for release but not yet torn down is reused: the
+    -- entry above revives it, and attaching again would leave two running.
+    if _subscribed[bufnr] then return end
+
+    _subscribed[bufnr] = true
     local ok = vim.api.nvim_buf_attach(bufnr, false, {
         on_lines = _on_lines,
-        on_detach = function(_, b) _attached[b] = nil end,
+        on_detach = function(_, b)
+            _attached[b] = nil
+            _subscribed[b] = nil
+        end,
     })
-    if not ok then _attached[bufnr] = nil end
+    if not ok then
+        _attached[bufnr] = nil
+        _subscribed[bufnr] = nil
+    end
 end
 
 ---@param bufnr integer
