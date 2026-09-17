@@ -36,7 +36,8 @@ describe("neotoolkit.fixedwin", function()
     end)
 
     local function create(axis, ratio, opts)
-        local win, group = fixedwin.create_fixed_win(axis, ratio, nil, opts)
+        opts = vim.tbl_extend("force", { axis = axis, ratio = ratio }, opts or {})
+        local win, group = fixedwin.create_fixed_win(0, opts)
         groups[#groups + 1] = group
         settle()
         return win
@@ -57,6 +58,20 @@ describe("neotoolkit.fixedwin", function()
         assert.equal(height, vim.api.nvim_win_get_height(bottom))
         assert.is_true(vim.wo[side].winfixwidth)
         assert.is_true(vim.wo[bottom].winfixheight)
+    end)
+
+    it("shows the given buffer and only enters it when asked", function()
+        local editor = vim.api.nvim_get_current_win()
+        local buf = vim.api.nvim_create_buf(false, true)
+        local side = create("width", 0.25, { pos = "topleft" })
+        assert.equal(editor, vim.api.nvim_get_current_win())
+
+        local bottom, group = fixedwin.create_fixed_win(buf, { axis = "height", ratio = 0.3, enter = true })
+        groups[#groups + 1] = group
+        settle()
+        assert.equal(bottom, vim.api.nvim_get_current_win())
+        assert.equal(buf, vim.api.nvim_win_get_buf(bottom))
+        assert.equal(0, vim.api.nvim_win_get_position(side)[2])
     end)
 
     it("keeps a bottom panel created before a side panel pinned", function()
