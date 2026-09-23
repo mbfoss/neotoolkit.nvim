@@ -4,8 +4,9 @@ A Lua library for Neovim plugin development. Not an end-user plugin: it
 registers no commands, no keymaps and no autocmds until a module is required and
 used. Every module is standalone and returns its own table, class or function.
 
-Requires Neovim 0.11+ (`vim.uv`, `winfixbuf`, `jobstart({term = true})`, the
-0.11 `vim.validate` signature).
+Requires Neovim 0.11+: `jobstart({term = true})`, the `err` field of
+`nvim_echo()`, the current `vim.validate()` signature, and `vim.lsp.Client`
+methods called with `:`.
 
 ## Installation
 
