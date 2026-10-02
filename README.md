@@ -42,7 +42,7 @@ local strutil = require("neotoolkit.strutil")
 | [`neotoolkit.fixedwin`](#neotoolkitfixedwin) | table | Split pinned to a ratio of the editor |
 | [`neotoolkit.term`](#neotoolkitterm) | table | Command in a terminal buffer |
 | [`neotoolkit.spawn`](#neotoolkitspawn) | function | `vim.uv.spawn` with pipe lifetime handled |
-| [`neotoolkit.usercmd`](#neotoolkitusercmd) | table | Subcommand dispatch and completion |
+| [`neotoolkit.usercmd`](#neotoolkitusercmd) | table | Subcommand completion |
 | [`neotoolkit.fileextmarks`](#neotoolkitfileextmarks) | table | Extmarks that survive buffer unload |
 
 ---
@@ -472,25 +472,21 @@ local handle, err = spawn({ "rg", "--json", "foo" }, {
 
 ## neotoolkit.usercmd <!-- tag: usercmd -->
 
-The two halves of a `:Command sub arg` interface — dispatch and completion —
-splitting arguments exactly as Vim does and keeping the plugin off the startup
-path.
+Completion for a `:Command sub arg` interface, splitting the command line the
+same way Vim splits `fargs` and keeping the plugin off the startup path.
 
 | Function | Signature |
 | -------- | -------------------------------------------- |
-| `handle` | `(opts, run_fn)` |
 | `complete` | `(arg_lead, cmd_line, subcommand) -> string[]` |
 
-For commands registered with `nargs = "*"`. Both are meant to be called from
-inside the command's callbacks, so the module — and whatever the callbacks close
-over — is loaded on first use rather than at startup. No argument parsing of its
-own: dispatch passes Neovim's `fargs` through and completion runs the command
-line back through `nvim_parse_cmd`, so both split by Vim's native rules.
-`handle` reports an error from `run_fn` as a notification, not a traceback.
+For commands registered with `nargs = "*"`. Meant to be called from inside the
+command's `complete` callback, so the module — and whatever the callback closes
+over — is loaded on first use rather than at startup. It runs the command line
+back through `nvim_parse_cmd`, so arguments split by Vim's native rules.
 
 ```lua
 vim.api.nvim_create_user_command("MyCmd", function(opts)
-    require("neotoolkit.usercmd").handle(opts, require("myplugin").run)
+    require("myplugin").run(opts.name, opts.fargs or {}, opts)
 end, {
     nargs = "*",
     complete = function(arg_lead, cmd_line)

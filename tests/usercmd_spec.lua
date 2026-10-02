@@ -1,13 +1,13 @@
 ---@diagnostic disable: undefined-global, undefined-field
 local usercmd = require("neotoolkit.usercmd")
 
---- Register a command, run `line`, and return the args its run_fn received.
+--- Register a command, run `line`, and return the `fargs` Neovim handed it.
 ---@param line string
 ---@return string[]
 local function run(line)
     local got
     vim.api.nvim_create_user_command("NtkSpec", function(opts)
-        usercmd.handle(opts, function(_, args) got = args end)
+        got = opts.fargs
     end, { nargs = "*" })
     vim.cmd(line)
     pcall(vim.api.nvim_del_user_command, "NtkSpec")
