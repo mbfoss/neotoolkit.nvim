@@ -89,16 +89,13 @@ function TreeBuffer.new(opts)
     local indent_str = opts.indent_string or "  "
     local expand_symbol = opts.expand_symbol or "\u{F0142}"
     local collapse_symbol = opts.collapse_symbol or "\u{F0140}"
-    -- The two icons share one column, so a tree must not change width when a
-    -- node is toggled: demand equal display widths. An empty pair is exempt,
-    -- there is no column to align in that case.
-    if expand_symbol ~= "" or collapse_symbol ~= "" then
-        assert(
-            vim.fn.strdisplaywidth(expand_symbol) == vim.fn.strdisplaywidth(collapse_symbol),
-            "expand_symbol and collapse_symbol must have the same display width"
-        )
-    end
     local expand_symbol_width = vim.fn.strdisplaywidth(expand_symbol)
+    -- The two icons share one column, so a tree must not change width when a
+    -- node is toggled: demand equal display widths.
+    assert(
+        expand_symbol_width == vim.fn.strdisplaywidth(collapse_symbol),
+        "expand_symbol and collapse_symbol must have the same display width"
+    )
     local indent_guide_char = opts.indent_guide_char or "│"
     _setup_guide_hl()
     local guide_pad_width = math.max(0, vim.fn.strdisplaywidth(indent_str) - vim.fn.strdisplaywidth(indent_guide_char))
