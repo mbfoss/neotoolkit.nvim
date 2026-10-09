@@ -31,6 +31,7 @@ local color = require("neotoolkit.color")
 ---@field collapse_symbol_hl string?
 ---@field indent_string string?
 ---@field collapsible boolean?  -- whether nodes can be expanded/collapsed (default true)
+---@field show_expand_symbols boolean?  -- render the expand/collapse symbol column (default true)
 ---@field indent_guides boolean?  -- draw vertical indent guides (default true)
 ---@field indent_guide_char string?
 ---@field indent_guide_hl string?  -- group the guides are drawn with (default NeotoolkitTreeIndentGuide)
@@ -45,6 +46,8 @@ local color = require("neotoolkit.color")
 ---@field private _formatter neotoolkit.TreeBuffer.FormatterFn
 ---@field private _expand_symbol string
 ---@field private _collapse_symbol string
+---@field private _expand_symbol_width number
+---@field private _icon_pad string
 ---@field private _expand_symbol_hl string?
 ---@field private _collapse_symbol_hl string?
 ---@field private _indent_string string
@@ -61,6 +64,7 @@ local color = require("neotoolkit.color")
 ---@field private _flat_ids any[]
 ---@field private _id_to_idx table<any, integer>
 ---@field private _collapsible boolean
+---@field private _show_expand_symbols boolean
 local TreeBuffer = {}
 TreeBuffer.__index = TreeBuffer
 
@@ -94,6 +98,7 @@ function TreeBuffer.new(opts)
             "expand_symbol and collapse_symbol must have the same display width"
         )
     end
+    local expand_symbol_width = vim.fn.strdisplaywidth(expand_symbol)
     local indent_guide_char = opts.indent_guide_char or "│"
     _setup_guide_hl()
     local guide_pad_width = math.max(0, vim.fn.strdisplaywidth(indent_str) - vim.fn.strdisplaywidth(indent_guide_char))
@@ -103,6 +108,8 @@ function TreeBuffer.new(opts)
         _formatter          = opts.formatter,
         _expand_symbol      = expand_symbol,
         _collapse_symbol    = collapse_symbol,
+        _expand_symbol_width = expand_symbol_width,
+        _icon_pad           = string.rep(" ", expand_symbol_width),
         _expand_symbol_hl   = opts.expand_symbol_hl,
         _collapse_symbol_hl = opts.collapse_symbol_hl,
         _indent_string      = indent_str,
@@ -119,6 +126,8 @@ function TreeBuffer.new(opts)
         _flat_ids           = {}, ---@type any[]
         _id_to_idx          = {}, ---@type table<any, integer>
         _collapsible        = opts.collapsible ~= false,
+        -- An empty symbol pair draws no column, so there is nothing to show.
+        _show_expand_symbols = opts.show_expand_symbols ~= false and expand_symbol ~= "",
     }, TreeBuffer)
 end
 
@@ -295,15 +304,19 @@ function TreeBuffer:_render_node(flatnode, row)
     local indent = self:_get_indent(depth)
     local chunks, prefix_width = {}, indent.width
 
-    if self._collapsible then
+    if self._collapsible and self._show_expand_symbols then
         local expandable = data.expandable or self._tree:have_children(id)
         local icon = expandable and (data.expanded and self._collapse_symbol or self._expand_symbol) or ""
         if icon ~= "" then
             local icon_hl = data.expanded and self._collapse_symbol_hl or self._expand_symbol_hl
             chunks[#chunks + 1] = { icon, icon_hl }
-            chunks[#chunks + 1] = { " " }
-            prefix_width = prefix_width + vim.fn.strdisplaywidth(icon) + 1
+        else
+            -- Blanks in the icon slot, so icon-less rows still line up with the
+            -- siblings that carry one.
+            chunks[#chunks + 1] = { self._icon_pad }
         end
+        chunks[#chunks + 1] = { " " }
+        prefix_width = prefix_width + self._expand_symbol_width + 1
     end
 
     local text_chunks, virt, line_hl = self._formatter(id, data.userdata, data.expanded, prefix_width)
