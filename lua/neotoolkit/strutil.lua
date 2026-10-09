@@ -1,3 +1,6 @@
+--- String handling for the two places Lua's own is not enough: text measured
+--- in display cells rather than bytes, and text arriving as byte chunks
+--- rather than lines.
 local M = {}
 
 ---@param str string

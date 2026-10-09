@@ -1,9 +1,18 @@
+---@class neotoolkit.LRU.Opts
+---@field on_evict   fun(key:any, value:any)?  called only when capacity is exceeded
+---@field on_removed fun(key:any, value:any)?  called for every removal (evict, delete, clear)
+
+---@private
 ---@class neotoolkit.LRU.Node
 ---@field key any
 ---@field value any
 ---@field prev neotoolkit.LRU.Node?
 ---@field next neotoolkit.LRU.Node?
 
+--- A bounded cache with least-recently-used eviction, for anything expensive
+--- to recompute per item — file stats, rendered lines, parsed output. The
+--- eviction hooks make it usable for values that own a resource, such as a
+--- buffer to wipe or a handle to close.
 ---@class neotoolkit.LRU
 ---@field _capacity integer
 ---@field _count integer
@@ -12,18 +21,22 @@
 ---@field _tail neotoolkit.LRU.Node?
 ---@field _on_evict fun(key:any, value:any)? Called ONLY when _capacity is exceeded.
 ---@field _on_removed fun(key:any, value:any)? Called for EVERY removal (eviction, delete, clear).
----@field new fun(self:neotoolkit.LRU, capacity:integer, opts?:{on_evict?:fun(key:any, value:any), on_removed?:fun(key:any, value:any)}):neotoolkit.LRU
 local LRU = {}
 LRU.__index = LRU
 
-function LRU:new(...)
+--- Create a cache holding at most `capacity` entries.
+---@param capacity integer
+---@param opts neotoolkit.LRU.Opts?
+---@return neotoolkit.LRU
+function LRU:new(capacity, opts)
     local obj = setmetatable({}, self)
-    if obj.init then obj:init(...) end
+    if obj.init then obj:init(capacity, opts) end
     return obj
 end
 
+---@private
 ---@param capacity integer
----@param opts? {on_evict?:fun(key:any, value:any), on_removed?:fun(key:any, value:any)}
+---@param opts neotoolkit.LRU.Opts?
 function LRU:init(capacity, opts)
     assert(type(capacity) == "number" and capacity > 0, "LRU capacity must be a positive integer")
     opts = opts or {}
@@ -66,6 +79,9 @@ function LRU:_delete_node(node, is_eviction)
     end
 end
 
+--- Look up `key` and promote it to most-recent.
+---@param key any
+---@return any? value
 function LRU:get(key)
     local node = self._map[key]
     if not node then return nil end
@@ -75,11 +91,17 @@ function LRU:get(key)
     return node.value
 end
 
+--- Look up `key` without promoting it.
+---@param key any
+---@return any? value
 function LRU:peek(key)
     local node = self._map[key]
     return node and node.value or nil
 end
 
+--- Insert or update `key`, evicting the least-recent entry at capacity.
+---@param key any
+---@param value any
 function LRU:put(key, value)
     local node = self._map[key]
 
@@ -103,6 +125,8 @@ function LRU:put(key, value)
     self._count = self._count + 1
 end
 
+--- Move an existing `key` to most-recent without reading its value.
+---@param key any
 function LRU:promote(key)
     local node = self._map[key]
     if not node then return end
@@ -110,6 +134,8 @@ function LRU:promote(key)
     self:_insert_front(node)
 end
 
+--- Remove `key` if it is present.
+---@param key any
 function LRU:delete(key)
     local node = self._map[key]
     if node then
@@ -117,10 +143,14 @@ function LRU:delete(key)
     end
 end
 
+--- Whether `key` is in the cache, without promoting it.
+---@param key any
+---@return boolean
 function LRU:has(key)
     return self._map[key] ~= nil
 end
 
+--- Remove every entry.
 function LRU:clear()
     if self._on_removed or self._on_evict then
         while self._head do
@@ -134,11 +164,14 @@ function LRU:clear()
     end
 end
 
+--- Number of entries held.
+---@return integer
 function LRU:size()
     return self._count
 end
 
----@return any[]
+--- Every key in the cache.
+---@return any[] -- most-recent first
 function LRU:keys()
     local keys = {}
     local current = self._head
@@ -153,6 +186,8 @@ function LRU:keys()
     return keys
 end
 
+--- Iterate `key, value` pairs.
+---@return fun(): (any, any) -- iterator yielding (key, value), most-recent first
 function LRU:iter_items()
     local current = self._head
     return function()

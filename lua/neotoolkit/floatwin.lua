@@ -1,4 +1,6 @@
 local uiutil = require "neotoolkit.ui"
+--- A read-only float for a block of text — help, a diff, a summary. Fire
+--- and forget: it owns its buffer and closes itself.
 ---@class neotoolkit.floatwin
 ---@field _complete_cache? string[]
 ---@field _complete_buf? integer

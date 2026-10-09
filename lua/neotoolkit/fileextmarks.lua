@@ -1,14 +1,21 @@
+--- Extmarks addressed by file path rather than by buffer: positions are
+--- stored, applied when the file is opened, tracked through edits, and
+--- written back on unload, so marks survive a buffer being wiped and land on
+--- files that are never opened.
 local M = {}
 
+--- A mark as reported by the getters: the id it was set with, where it now
+--- sits, and where that position came from.
 ---@class neotoolkit.fileextmarks.MarkInfo
----@field id number
----@field file string
+---@field id number        -- the id passed to set_file_extmark
+---@field file string        -- normalized path the mark lands on
 ---@field lnum number        -- 1-based
 ---@field col number        -- 0-based
----@field opts vim.api.keyset.set_extmark
----@field user_data any
----@field source "live"|"stored"
+---@field opts vim.api.keyset.set_extmark  -- the options the mark was set with
+---@field user_data any        -- the caller's payload
+---@field source "live"|"stored"  -- which position won: the open buffer or the cache
 
+---@private
 ---@class neotoolkit.fileextmarks.MarkData
 ---@field id number
 ---@field ns number
@@ -20,6 +27,7 @@ local M = {}
 ---@alias neotoolkit.fileextmarks.ById table<number, neotoolkit.fileextmarks.MarkData>
 ---@alias neotoolkit.fileextmarks.ByFile table<string, neotoolkit.fileextmarks.ById>
 
+---@private
 ---@class neotoolkit.fileextmarks.GroupData
 ---@field ns number
 ---@field byfile neotoolkit.fileextmarks.ByFile
@@ -76,6 +84,7 @@ local function _normalized_buf_name(bufnr, name)
     return normalized
 end
 
+---@private
 ---@class neotoolkit.fileextmarks.BufCacheEntry
 ---@field bufnr integer
 ---@field name string        -- the buffer's name when it was resolved
@@ -254,6 +263,7 @@ local function _set_extmark(bufnr, mark, store)
     if store then mark.lnum, mark.col = lnum, col end
 end
 
+---@private
 ---@class neotoolkit.fileextmarks.LivePos
 ---@field id number
 ---@field lnum number        -- 1-based
@@ -815,16 +825,18 @@ local function _refresh_group(group_data, group)
     end
 end
 
+--- The surface one group is driven through. `lnum` is 1-based and `col`
+--- 0-based; `live` prefers the position in an open buffer over the stored one.
 ---@class neotoolkit.fileextmarks.GroupFunctions
----@field set_file_extmark fun(id:number, file:string, lnum:number, col:number, opts:vim.api.keyset.set_extmark, user_data:any)
----@field remove_extmarks fun()
----@field remove_extmark fun(id:number)
----@field remove_file_extmarks fun(file:string)
+---@field set_file_extmark fun(id:number, file:string, lnum:number, col:number, opts:vim.api.keyset.set_extmark, user_data:any)  sets or repositions the mark `id`
+---@field remove_extmarks fun()  removes every mark in the group
+---@field remove_extmark fun(id:number)  removes one mark
+---@field remove_file_extmarks fun(file:string)  removes the group's marks on one file
 ---@field get_extmark_by_id fun(id:number): neotoolkit.fileextmarks.MarkInfo?
 ---@field get_extmark_by_location fun(file:string, line:number, live:boolean): neotoolkit.fileextmarks.MarkInfo?
----@field get_extmarks fun(live:boolean): neotoolkit.fileextmarks.MarkInfo[]
+---@field get_extmarks fun(live:boolean): neotoolkit.fileextmarks.MarkInfo[]  every mark in the group
 ---@field get_file_extmarks fun(file:string, live:boolean): neotoolkit.fileextmarks.MarkInfo[]
----@field refresh fun()
+---@field refresh fun()  re-applies the group's marks to every open buffer
 
 --- Claims the prefix used for every namespace and augroup this module creates.
 --- Must be called (once) before M.define_group().
@@ -836,6 +848,8 @@ function M.init(prefix)
     _prefix = prefix
 end
 
+--- Define a group and return its functions. The name must be unique within this
+--- module instance; it derives the extmark namespace, so it asserts on a clash.
 ---@param group string  name, unique within this module instance; used to derive the extmark namespace
 ---@return neotoolkit.fileextmarks.GroupFunctions
 function M.define_group(group)

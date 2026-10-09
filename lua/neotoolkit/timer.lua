@@ -1,3 +1,6 @@
+--- `vim.uv` timers with the lifetime handled: each call returns a stop
+--- function, so no handle has to be stored, checked for `is_closing` or
+--- closed by hand.
 local M = {}
 
 ---@param timer table?

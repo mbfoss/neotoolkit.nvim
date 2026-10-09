@@ -1,3 +1,6 @@
+--- Highlight groups defined as a function of the current colorscheme, so a
+--- plugin can derive its colours from existing groups instead of hardcoding
+--- them and still follow a theme switch.
 local M = {}
 
 ---@type table<string, fun(): vim.api.keyset.highlight>  -- themed group -> spec

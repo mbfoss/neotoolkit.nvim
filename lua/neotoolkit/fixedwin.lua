@@ -1,5 +1,8 @@
 local uiutil = require("neotoolkit.ui")
 
+--- A panel split that keeps its proportion of the editor as the layout
+--- changes, instead of the fixed line count a plain `:split` leaves behind
+--- once other windows open, close or move.
 ---@class neotoolkit.fixedwin
 local M = {}
 

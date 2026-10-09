@@ -1,5 +1,17 @@
 local timer = require('neotoolkit.timer')
 
+local _default_frames = {
+    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"
+}
+
+---@class neotoolkit.SpinnerOpts
+---@field frames string[]?   (default: ten spinning dots)
+---@field interval integer?  milliseconds between frames (default: 80)
+---@field on_update fun(frame:string, index:integer)?  called once per frame
+
+--- An animation clock, not a widget: it advances a frame index on a timer and
+--- hands the current frame to `on_update`. Where the frame is drawn —
+--- statusline, virtual text, window title — is the caller's choice.
 ---@class neotoolkit.Spinner
 ---@field frames string[]
 ---@field interval integer
@@ -8,26 +20,19 @@ local timer = require('neotoolkit.timer')
 ---@field frame integer
 ---@field running boolean
 ---@field on_update fun(frame:string, index:integer)?
-
-
-local _default_frames = {
-    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"
-}
-
-
----@alias neotoolkit.SpinnerOpts {frames?:string[], interval?:integer, on_update?:fun(frame:string, index:integer)}
-
----@class neotoolkit.Spinner
----@field new fun(self:neotoolkit.Spinner,opts:neotoolkit.SpinnerOpts):neotoolkit.Spinner
 local Spinner = {}
 Spinner.__index = Spinner
 
-function Spinner:new(...)
+--- Create a spinner; call `start` to run it.
+---@param opts neotoolkit.SpinnerOpts?
+---@return neotoolkit.Spinner
+function Spinner:new(opts)
     local obj = setmetatable({}, self)
-    if obj.init then obj:init(...) end
+    if obj.init then obj:init(opts) end
     return obj
 end
 
+---@private
 ---@param opts neotoolkit.SpinnerOpts?
 function Spinner:init(opts)
     opts = opts or {}
@@ -39,6 +44,7 @@ function Spinner:init(opts)
     self.on_update = opts.on_update
 end
 
+--- Start advancing frames. Idempotent: a spinner already running is left alone.
 function Spinner:start()
     if self.running then
         return
@@ -52,6 +58,7 @@ function Spinner:start()
     end)
 end
 
+--- Stop advancing frames. Idempotent: a stopped spinner is left alone.
 function Spinner:stop()
     if not self.running then
         return

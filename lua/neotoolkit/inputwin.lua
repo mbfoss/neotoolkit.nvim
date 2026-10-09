@@ -1,14 +1,16 @@
 local ui_util = require("neotoolkit.ui")
+--- A `vim.ui.input` replacement for cases needing validation before the
+--- window closes, so a rejected value can be corrected in place rather than
+--- re-prompted.
 local M = {}
 
 ---@class neotoolkit.inputwin.Opts
----@field prompt? string
----@field default? string
----@field default_width? number
----@field row_offset? number
----@field col_offset? number
----@field validate? fun(content:string):boolean,string?
----@
+---@field prompt? string          label shown beside the input
+---@field default? string         initial text
+---@field default_width? number   width the window opens at
+---@field row_offset? number      rows above the cursor to open at
+---@field col_offset? number      columns right of the cursor to open at
+---@field validate? fun(content:string):boolean,string?  false plus a message keeps the window open
 ---@param opts neotoolkit.inputwin.Opts
 ---@param on_confirm fun(value: string|nil)
 function M.open(opts, on_confirm)

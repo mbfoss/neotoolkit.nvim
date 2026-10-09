@@ -3,6 +3,9 @@
 ---@field write fun(data: string?, on_done?: fun())
 ---@field get_write_queue_size fun():integer
 
+--- A `vim.uv.spawn` wrapper for jobs whose output is consumed as data: raw
+--- stdout and stderr chunks, optional stdin, and an exit callback that cannot
+--- fire before the output has been delivered.
 ---@param cmd      string[]
 ---@param opts     { cwd?: string, env: {string:string}?, stdin?: boolean, stdout?: fun(data:string), stderr?: fun(data:string) }
 ---@param on_exit  fun(code:integer)

@@ -1,3 +1,6 @@
+--- Runs a command in a terminal buffer the caller can display where it likes,
+--- with ANSI rendering handled by Neovim. For a job whose output is parsed
+--- rather than shown, use `neotoolkit.spawn`.
 local M = {}
 
 local ui = require("neotoolkit.ui")

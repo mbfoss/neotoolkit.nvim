@@ -1,3 +1,7 @@
+--- Window and buffer primitives for plugins that own a panel.
+--- `smart_open_file` and `smart_open_buffer` are the important pair: they
+--- open a result in a window the user would expect, rather than inside the
+--- plugin's own float or fixed window.
 local M = {}
 
 -- `vim.wo[win].opt = val` acts like `:set` (see `:h vim.wo`): it writes the

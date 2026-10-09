@@ -1,3 +1,6 @@
+--- Rate limiters for callbacks driven by events the plugin does not control
+--- — autocmds, keystrokes, job output. The four variants differ only in
+--- when `fn` runs relative to the window; pick by the table below.
 local M = {}
 
 local _uv = vim.uv

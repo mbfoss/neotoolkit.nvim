@@ -1,12 +1,15 @@
+--- One entry of the tree, as handed in and handed back out.
 ---@class neotoolkit.Tree.Item
----@field id any
----@field data any
+---@field id any    unique across the whole tree
+---@field data any  the caller's payload for this id
 
+--- An item for `update_children`, which diffs rather than replaces.
 ---@class neotoolkit.Tree.ItemUpdate
 ---@field id any
 ---@field data any
----@field keep_children boolean?
+---@field keep_children boolean?  keep the subtree already hanging off `id`
 
+---@private
 ---@class neotoolkit.Tree.Node
 ---@field parent_id any|nil
 ---@field data any
@@ -15,11 +18,17 @@
 ---@field next_sibling any|nil
 ---@field prev_sibling any|nil
 
+---@private
 ---@class neotoolkit.Tree.FlatNode
 ---@field id any
 ---@field data any
 ---@field depth integer
 
+--- Ordered tree of nodes keyed by caller-supplied ids, for hierarchical data
+--- that is updated in place — a file tree, a symbol outline, a result set
+--- grouped by file. Nodes hold `parent_id`, `data` and sibling/child links;
+--- there is no node object to hold on to, and ids must be unique across the
+--- whole tree.
 ---@generic T
 ---@class neotoolkit.Tree
 ---@field _nodes table<any, neotoolkit.Tree.Node>
@@ -28,6 +37,7 @@
 local Tree = {}
 Tree.__index = Tree
 
+--- Create an empty tree.
 function Tree.new()
 	local obj = setmetatable({}, Tree)
 	obj:_init()
@@ -206,6 +216,8 @@ function Tree:_remove_subtree(id)
 	self._nodes[id] = nil
 end
 
+--- Replace everything under `parent_id` with `items`; a nil `parent_id`
+--- replaces the roots. Existing subtrees are discarded.
 ---@generic T
 ---@param parent_id any|nil
 ---@param items neotoolkit.Tree.Item[]
@@ -267,6 +279,9 @@ function Tree:set_children(parent_id, items)
 	end
 end
 
+--- Reconcile `items` into `parent_id` in place: surviving ids keep their node
+--- and so their subtree, new ids are added, ids no longer listed are removed.
+--- An item's `keep_children` preserves the subtree already under its id.
 ---@param parent_id any|nil
 ---@param items neotoolkit.Tree.ItemUpdate[]
 function Tree:update_children(parent_id, items)
@@ -336,6 +351,8 @@ function Tree:update_children(parent_id, items)
 	end
 end
 
+--- Append `id` as the last child of `parent_id`; a nil `parent_id` appends a
+--- root. The id must not already be in the tree.
 ---@generic T
 ---@param parent_id any|nil
 ---@param id any
@@ -358,6 +375,7 @@ function Tree:add_item(parent_id, id, data)
 	self:_link_child(parent_id, id)
 end
 
+--- Replace the data held for `id`. Returns false when `id` is not in the tree.
 ---@generic T
 ---@param id any
 ---@param data any
@@ -370,6 +388,8 @@ function Tree:set_item_data(id, data)
 	return true
 end
 
+--- Insert `id` next to `reference_id` as a sibling: before it when `before` is
+--- true, after it otherwise.
 ---@generic T
 ---@param reference_id any
 ---@param id any
@@ -398,6 +418,7 @@ function Tree:add_sibling(reference_id, id, data, before)
 	self:_link_sibling(reference_id, id, before)
 end
 
+--- Whether `id` exists anywhere in the tree.
 ---@param id any
 ---@return boolean
 function Tree:have_item(id)
@@ -405,12 +426,14 @@ function Tree:have_item(id)
 	return self._nodes[id] ~= nil
 end
 
+--- Whether `id` is a root node, i.e. has no parent.
 ---@return boolean
 function Tree:is_root(id)
 	local node = self._nodes[id]
 	return node ~= nil and node.parent_id == nil
 end
 
+--- Every root, in sibling order.
 ---@return neotoolkit.Tree.Item[]
 function Tree:get_roots()
 	local items = {}
@@ -427,6 +450,7 @@ function Tree:get_roots()
 	return items
 end
 
+--- Iterate every root as an `id, data` pair.
 ---@return fun(): (any, any) -- iterator yielding (id, data) for each root
 function Tree:iter_roots()
 	local id = self._root_first
@@ -440,6 +464,7 @@ function Tree:iter_roots()
 	end
 end
 
+--- The id of `id`'s parent, or nil when `id` is a root.
 ---@param id any
 ---@return any|nil parent_id
 function Tree:get_parent_id(id)
@@ -451,6 +476,7 @@ function Tree:get_parent_id(id)
 	return node.parent_id
 end
 
+--- The data held for `id`, or nil when `id` is not in the tree.
 ---@param id any
 ---@return any -- node data or nil
 function Tree:get_data(id)
@@ -459,6 +485,7 @@ function Tree:get_data(id)
 	return node and node.data or nil
 end
 
+--- How many levels `id` sits below the roots; a root is depth 0.
 ---@param id any
 ---@return integer
 function Tree:get_depth(id)
@@ -482,6 +509,7 @@ function Tree:get_depth(id)
 	return depth
 end
 
+--- Every item in the tree, depth-first.
 ---@return neotoolkit.Tree.Item[]
 function Tree:get_items()
 	local items = {}
@@ -491,6 +519,7 @@ function Tree:get_items()
 	return items
 end
 
+--- Whether `id` has at least one child.
 ---@param id any
 ---@return boolean
 function Tree:have_children(id)
@@ -499,6 +528,7 @@ function Tree:have_children(id)
 	return node ~= nil and node.first_child ~= nil
 end
 
+--- The child ids of `parent_id`, in order; a nil `parent_id` returns the roots.
 ---@param parent_id any|nil If nil, returns root nodes.
 ---@return any[]
 function Tree:get_children_ids(parent_id)
@@ -515,6 +545,8 @@ function Tree:get_children_ids(parent_id)
 	return ids
 end
 
+--- The children of `parent_id` as items, in order; a nil `parent_id` returns
+--- the roots.
 ---@param parent_id any|nil If nil, returns root nodes.
 ---@return neotoolkit.Tree.Item[]
 function Tree:get_children(parent_id)
@@ -536,6 +568,7 @@ function Tree:get_children(parent_id)
 	return items
 end
 
+--- The first child of `id`, or nil when it has none.
 ---@param id any
 ---@return any|nil
 function Tree:get_first_child_id(id)
@@ -544,6 +577,7 @@ function Tree:get_first_child_id(id)
 	return node and node.first_child or nil
 end
 
+--- The last child of `id`, or nil when it has none.
 ---@param id any
 ---@return any|nil
 function Tree:get_last_child_id(id)
@@ -552,6 +586,7 @@ function Tree:get_last_child_id(id)
 	return node and node.last_child or nil
 end
 
+--- The sibling before `id`, or nil when `id` is first.
 ---@param id any
 ---@return any|nil
 function Tree:get_prev_sibling_id(id)
@@ -560,6 +595,7 @@ function Tree:get_prev_sibling_id(id)
 	return node and node.prev_sibling or nil
 end
 
+--- The sibling after `id`, or nil when `id` is last.
 ---@param id any
 ---@return any|nil
 function Tree:get_next_sibling_id(id)
@@ -568,6 +604,7 @@ function Tree:get_next_sibling_id(id)
 	return node and node.next_sibling or nil
 end
 
+--- Iterate the children of `parent_id` as `id, data` pairs.
 ---@param parent_id any
 ---@return fun(): (any, any) -- iterator yielding (id, data) for each child
 function Tree:iter_children(parent_id)
@@ -585,6 +622,7 @@ function Tree:iter_children(parent_id)
 	end
 end
 
+--- Remove `id` and everything under it.
 ---@param id any
 function Tree:remove_item(id)
 	assert(id, "id required")
@@ -604,6 +642,7 @@ function Tree:_remove_children(node)
 	node.last_child = nil
 end
 
+--- Remove every descendant of `id`, keeping `id` itself.
 ---@param id any
 function Tree:remove_children(id)
 	assert(id ~= nil, "id is required")
@@ -631,6 +670,8 @@ function Tree:_walk_node(id, depth, handler)
 	end
 end
 
+--- Visit every node depth-first. Returning false from `handler` skips that
+--- node's subtree.
 ---@param handler fun(id:any, data:any, depth:number):boolean?
 function Tree:walk_tree(handler)
 	local id = self._root_first
@@ -640,6 +681,8 @@ function Tree:walk_tree(handler)
 	end
 end
 
+--- Visit `id` and its descendants depth-first, with the same handler contract
+--- as `walk_tree`.
 ---@param id any
 ---@param handler fun(id:any, data:any, depth:number):boolean?
 function Tree:walk_node(id, handler)
@@ -648,6 +691,8 @@ function Tree:walk_node(id, handler)
 	self:_walk_node(id, 0, handler)
 end
 
+--- Assert that every child and sibling link is consistent, raising with the
+--- offending ids on the first inconsistency. For tests.
 function Tree:validate()
 	local visited = {}
 	local function assertf(cond, fmt, ...)

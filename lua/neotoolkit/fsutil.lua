@@ -1,3 +1,7 @@
+--- Filesystem access that keeps the UI responsive: the directory walks yield
+--- to the event loop instead of blocking, and rename, copy and trash handle
+--- the editor and platform details a plain `vim.uv` call leaves to the
+--- caller.
 local M = {}
 
 local timer = require("neotoolkit.timer")

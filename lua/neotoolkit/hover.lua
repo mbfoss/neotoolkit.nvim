@@ -1,8 +1,7 @@
+--- A transient float at the cursor, for text belonging to whatever the cursor
+--- is on — a definition, a blame line, an error. It behaves like an LSP
+--- hover because it is built on one.
 local M = {}
-
---- LSP-style hover built on `open_floating_preview`:
---- opens at the cursor without focus, closes when the cursor moves, and the
---- same key again jumps into it, where `q` or `<Esc>` closes it.
 
 local _FOCUS_ID = "neotoolkit.hover"
 local _BORDER   = "rounded"

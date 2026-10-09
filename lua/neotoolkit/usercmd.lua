@@ -1,3 +1,6 @@
+--- Completion for a `:Command sub arg` interface, splitting the command line
+--- the same way Vim splits `fargs` and keeping the plugin off the startup
+--- path.
 local M = {}
 
 -- This module does no argument parsing of its own: completion runs the raw
