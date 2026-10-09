@@ -2,13 +2,25 @@
 
 --- The module keeps its state in upvalues and refuses a second `init()`, so each
 --- spec gets a fresh copy rather than trying to unpick the previous one's marks.
---- Namespaces and augroups are process-global and keyed by name, but they are
---- reused rather than accumulated, and every spec works in its own buffers.
+--- Namespaces are process-global and keyed by name, and the module refuses to
+--- claim one another copy owns, so every fresh copy gets its own prefix:
+--- reusing "ntkspec" would trip that guard on the second spec.
+local _seq = 0
+local ns_name
+
 local function fresh_group()
+    _seq = _seq + 1
+    ns_name = "ntkspec" .. _seq .. ".marks"
     package.loaded["neotoolkit.fileextmarks"] = nil
     local fem = require("neotoolkit.fileextmarks")
-    fem.init("ntkspec")
+    fem.init("ntkspec" .. _seq)
     return fem.define_group("marks")
+end
+
+--- The namespace the group under test writes into, read straight from Neovim.
+---@return integer
+local function marks_ns()
+    return vim.api.nvim_get_namespaces()[ns_name]
 end
 
 --- A real directory: `tempname()` hands back a path under /var on macOS, which
@@ -43,7 +55,7 @@ end
 ---@param bufnr integer
 ---@return integer
 local function stranded_count(bufnr)
-    local ns = vim.api.nvim_get_namespaces()["ntkspec.marks"]
+    local ns = marks_ns()
     local line_count = vim.api.nvim_buf_line_count(bufnr)
     return #vim.api.nvim_buf_get_extmarks(bufnr, ns, { line_count, 0 }, { -1, -1 }, {})
 end
@@ -54,7 +66,7 @@ end
 ---@param bufnr integer
 ---@return integer
 local function buf_mark_count(bufnr)
-    local ns = vim.api.nvim_get_namespaces()["ntkspec.marks"]
+    local ns = marks_ns()
     return #vim.api.nvim_buf_get_extmarks(bufnr, ns, 0, -1, {})
 end
 
@@ -401,7 +413,7 @@ describe("fileextmarks buffer subscriptions", function()
 
         vim.api.nvim_buf_set_lines(buf, 1, 3, true, {})   -- reaches the end
 
-        local ns = vim.api.nvim_get_namespaces()["ntkspec.marks"]
+        local ns = marks_ns()
         local orphan
         for _, m in ipairs(vim.api.nvim_buf_get_extmarks(buf, ns, 0, -1, { details = true })) do
             if m[1] == 1 then orphan = m[4] end
